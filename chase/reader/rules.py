@@ -1,0 +1,59 @@
+"""Rule-based stand-ins for the two language-model jobs.
+
+``RuleBasedClassifier`` labels a carrier's reply from keywords.
+``StandInReader`` treats a document's bytes as JSON describing what a real
+reader would extract from the image, which is how the synthetic pack models PODs.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+
+from chase.domain.checks import UNREADABLE, Extraction
+from chase.domain.models import Inbound
+from chase.ports import Classification, ReplyLabel
+
+_OUT_OF_OFFICE = re.compile(
+    r"out of (?:the )?office|auto(?:matic)?[- ]?reply|autoreply|on vacation|away from my desk",
+    re.IGNORECASE,
+)
+_WRONG_PERSON = re.compile(
+    r"wrong (?:person|number|email|address|company)|no longer (?:with|works|employed)"
+    r"|not (?:the|your) (?:dispatcher|driver|carrier)|don'?t (?:have|haul|know) (?:this|that) load"
+    r"|not (?:my|our) load",
+    re.IGNORECASE,
+)
+_PROMISE = re.compile(
+    r"will (?:send|get|have|forward|upload)|i'?ll (?:send|get|have|forward|upload)"
+    r"|tomorrow|later today|this afternoon|in the morning|working on it|as soon as"
+    r"|asap|when (?:he|she|the driver|they) (?:gets?|returns?|is back)|waiting on (?:the )?driver",
+    re.IGNORECASE,
+)
+
+
+class RuleBasedClassifier:
+    def classify(self, inbound: Inbound) -> Classification:
+        if inbound.attachments:
+            return Classification(ReplyLabel.HAS_DOCUMENT, 100)
+        text = f"{inbound.subject}\n{inbound.body}"
+        if _OUT_OF_OFFICE.search(text):
+            return Classification(ReplyLabel.OUT_OF_OFFICE, 95)
+        if _WRONG_PERSON.search(text):
+            return Classification(ReplyLabel.WRONG_PERSON, 90)
+        if "?" in inbound.body:
+            return Classification(ReplyLabel.QUESTION, 85)
+        if _PROMISE.search(text):
+            return Classification(ReplyLabel.PROMISE, 85)
+        return Classification(ReplyLabel.UNKNOWN, 50)
+
+
+class StandInReader:
+    def read(self, filename: str, content: bytes) -> Extraction:
+        try:
+            data = json.loads(content.decode("utf-8"))
+            if not isinstance(data, dict):
+                return UNREADABLE
+            return Extraction.from_dict(data)
+        except (ValueError, UnicodeDecodeError, TypeError):
+            return UNREADABLE

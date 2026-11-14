@@ -1,2 +1,179 @@
-# Talon-Chase
-backend agent for small freight brokerages
+# Talon Chase
+
+A back-office agent for small freight brokerages. For every delivered load it asks
+the carrier for the signed proof of delivery (POD), follows up on a schedule, checks
+the document, files it to the broker's system, and hands the load to a person when
+it is stuck or anything looks risky.
+
+**Status: version 1 engine, synthetic data only.** Nothing here contacts a real
+carrier, mailbox, phone, language model or TMS. Those sit behind interfaces with
+in-memory stand-ins. See [What is not built](#what-is-not-built).
+
+## Quick start
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+
+pytest                          # 123 pass, 1 skipped without Postgres; 129 with it
+python -m chase.demo            # five loads, end to end, with evidence exports
+python -m synthetic.evaluate    # 200 loads, 60 document fixtures, pass/fail report
+python tools/verify_evidence.py out/demo/evidence-TC-300002.json
+```
+
+To include the Postgres tests, point them at an empty UTF-8 database:
+
+```bash
+pip install -e ".[dev,postgres]"
+CHASE_TEST_POSTGRES_URL=postgresql+psycopg://user:pass@localhost:5432/chase_test pytest
+```
+
+## How a chase runs
+
+```
+load delivered ──> ask carrier ──> file arrives? ──yes──> check document ──pass──> file to TMS ──> closed
+                       ^                │ no                    │ fail (say why)
+                       └── wait, retry ─┘<──────────────────────┘
+                                │ 3 tries, no file            any risk flag, any step
+                                └──────────────> hand to a person <────────────┘
+```
+
+Default schedule, in the carrier's local time (every interval is per-broker config):
+
+| When | Action |
+| --- | --- |
+| Load marked delivered, or 2 hours after the appointment with no status | Email the dispatcher: load number, upload link |
+| 3 hours later | Text the driver, only with consent on file |
+| 08:00 next business day | Second email, and a text to the dispatcher with consent |
+| 48 hours after the first ask | Third email, copying the broker's rep |
+| 24 hours after that | Stop. The load goes to a person with the carrier's phone numbers and full history |
+
+Nothing is sent between 20:00 and 07:00 carrier-local. A promise ("will send
+tomorrow") pushes the next ask back a day. An out-of-office reply changes nothing.
+
+## Rules the code enforces
+
+Each has a test in `tests/test_acceptance.py`.
+
+1. **Deterministic.** The state machine, schedule and checks are plain code. Time and
+   ids are injected. The same inputs produce the same evidence hashes.
+2. **A chase closes two ways only:** a passed check plus a successful write-back, or
+   an escalation acknowledged by a named person.
+3. **The agent writes only to contacts on the carrier record.** An address first seen
+   in a reply is never used until a person approves it.
+4. **Money talk is held.** A message mentioning bank details, remit-to, factoring, wire,
+   ACH or a notice of assignment gets no reply and goes to a person, attachment and all.
+5. **Outbound carries the load number and the request, nothing else.** A guard refuses
+   any message containing the load's rate, customer, consignee, address or pickup number.
+6. **Exception notes are never filed clean.** Shortage, damage, refusal or seal notes on
+   a POD always go to a person, whatever else is right with the document.
+7. **Write-back is idempotent** by (load, document hash, adapter). A lost response is
+   retried without attaching twice. An adapter outage falls back to the emailed packet.
+8. **Texts need consent and stop on STOP**, permanently, including after a contact re-sync.
+9. **Kill switches**, global and per broker, stop every outbound message and write-back.
+10. **Every step is evidence.** Each send, reply, document, check, state change and
+    write-back appends to a per-load hash chain. See [docs/EVIDENCE.md](docs/EVIDENCE.md).
+
+## Layout
+
+```
+chase/
+  domain/      models, state machine, schedule, risk rules, document checks,
+               outbound templates and guard, upload tokens (pure; no I/O)
+  evidence/    canonical JSON, SHA-256 hash chain, verifier
+  engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
+  ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
+  channels/    in-memory email and text stand-ins
+  reader/      rule-based reply classifier; stand-in document reader
+  writeback/   FakeApiAdapter (TMS API stand-in), PacketEmailAdapter (works with any TMS)
+  store/       MemoryStore, SqlStore (SQLite and Postgres)
+  api/         FastAPI service
+  demo.py      five-load walkthrough
+synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
+migrations/    Alembic; one initial migration
+tools/         verify_evidence.py, a standalone verifier with no project imports
+docs/          EVIDENCE.md, UI.md, VALIDATION.md
+```
+
+## Service
+
+```bash
+cp .env.example .env    # fill in the three secrets
+docker compose up --build
+```
+
+The Docker files were written but **not run**: the build environment had no Docker
+daemon. The same service was exercised through its routes in `tests/test_api.py`, and
+the migration was run against Postgres 16 in `tests/test_migrations.py`.
+
+Without Docker:
+
+```bash
+export CHASE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export CHASE_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+uvicorn chase.api.main:app      # SQLite file chase.db by default
+```
+
+Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
+
+| Route | Purpose |
+| --- | --- |
+| `PUT /v1/brokers/{id}`, `/v1/carriers/{id}`, `/v1/contacts/{id}` | Sync records from the TMS |
+| `PATCH /v1/brokers/{id}/config` | Change schedule and policy settings |
+| `POST /v1/loads` | Add or update a load; opens a chase once it is delivered |
+| `POST /v1/inbound` | A carrier's email or text, attachments as base64; safe to repeat with the same `external_id` |
+| `POST /v1/tick` | Do everything that is due; call it every few minutes from a scheduler |
+| `GET /u/{token}`, `POST /u/{token}` | Carrier upload page and upload; no key, the token is the permission |
+| `GET /v1/brokers/{id}/queue` | What needs a person: open escalations and unmatched messages |
+| `GET /v1/brokers/{id}/summary`, `/chases` | Counts and the list of chases |
+| `GET /v1/loads/{id}` | One load with its attempts, replies, documents, checks, escalations |
+| `GET /v1/loads/{id}/evidence` | The evidence export for that load |
+| `POST /v1/escalations/{id}/acknowledge` | A named person takes an escalation |
+| `POST /v1/contacts/approve` | A named person approves a new contact |
+| `POST /v1/outbound/switch` | Kill switch, global or for one broker |
+
+## Synthetic evaluation
+
+`python -m synthetic.evaluate` runs the engine over a seeded pack and exits non-zero
+if any requirement fails. Current result:
+
+| Class | Correct | Total |
+| --- | --- | --- |
+| clean | 20 | 20 |
+| unreadable | 8 | 8 |
+| unsigned | 8 | 8 |
+| wrong load (4 unknown, 4 belonging to another open load) | 8 | 8 |
+| exception noted | 8 | 8 |
+| carrier invoice | 8 | 8 |
+
+Also required and met: zero exception-noted documents filed, zero sends in quiet
+hours, all 200 evidence chains verify, zero sensitive details sent, all 5 money
+messages held.
+
+**What this does and does not show.** The fixtures are structured stand-ins that state
+what a reader would extract from an image. The evaluation proves the routing rules
+are right given a correct reading. It says nothing about how well a real model reads
+real PODs. That needs labelled documents from a pilot broker.
+
+## What is not built
+
+- **Real channels.** No mailbox, text line, language model or TMS integration. Each
+  needs its own adapter behind the existing interface.
+- **An outbox.** Messages are sent inside the database transaction. With a real
+  provider, a commit that fails after a send would cause a duplicate on retry. Add an
+  outbox table and a sender before connecting real email or text.
+- **User accounts.** There is one admin key. A broker-facing screen needs sign-in and
+  per-broker access before anyone outside uses it.
+- **Document storage.** Files are stored in the database by content hash. Move them to
+  object storage before real volume.
+- **Public holidays.** The schedule knows weekends and quiet hours, not holidays.
+- **A real reply classifier.** The stand-in is keyword rules. Anything it does not
+  recognise goes to a person, which is safe but will over-escalate on real mail.
+- **External anchoring of evidence.** See the limits section of docs/EVIDENCE.md.
+
+## Next steps
+
+1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
+2. Design the broker screens from [docs/UI.md](docs/UI.md).
+3. Then, one at a time: outbox, mailbox adapter, document reader with labelled PODs,
+   first TMS adapter.

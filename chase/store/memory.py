@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 from typing import Any, TypeVar
 
@@ -17,6 +18,10 @@ class MemoryStore:
         self._blobs: dict[str, bytes] = {}
         self._evidence: dict[str, list[EvidenceEvent]] = {}
         self._settings: dict[str, str] = {}
+
+    @contextlib.contextmanager
+    def transaction(self):
+        yield
 
     def put(self, obj: Any) -> None:
         self._objects.setdefault(type(obj), {})[obj.id] = copy.deepcopy(obj)

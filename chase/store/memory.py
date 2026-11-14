@@ -47,14 +47,14 @@ class MemoryStore:
         chain = self._evidence.setdefault(event.chain_id, [])
         if event.seq != len(chain):
             raise ValueError(f"evidence seq {event.seq} out of order for chain {event.chain_id}")
-        chain.append(event)
+        chain.append(copy.deepcopy(event))
 
     def last_evidence(self, chain_id: str) -> EvidenceEvent | None:
         chain = self._evidence.get(chain_id)
-        return chain[-1] if chain else None
+        return copy.deepcopy(chain[-1]) if chain else None
 
     def evidence(self, chain_id: str) -> list[EvidenceEvent]:
-        return list(self._evidence.get(chain_id, []))
+        return copy.deepcopy(self._evidence.get(chain_id, []))
 
     def get_setting(self, key: str, default: str) -> str:
         return self._settings.get(key, default)

@@ -100,3 +100,17 @@ def test_round_trip_dict():
 
     events = [EvidenceEvent.from_dict(e.to_dict()) for e in build()]
     assert verify_chain(events).ok
+
+
+def test_memory_store_evidence_cannot_be_changed_through_a_returned_copy():
+    from chase.store.memory import MemoryStore
+
+    store = MemoryStore()
+    payload = {"a": {"b": 1}}
+    store.append_evidence(make_event("L", "k", 1, payload, None))
+    payload["a"]["b"] = 2
+    store.evidence("L")[0].payload["a"]["b"] = 3
+    store.last_evidence("L").payload["a"]["b"] = 4
+    assert (
+        store.evidence("L")[0].payload == {"a": {"b": 1}} and verify_chain(store.evidence("L")).ok
+    )

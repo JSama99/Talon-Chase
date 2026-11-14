@@ -23,6 +23,7 @@ from chase.domain.models import ENTITY_TYPES
 from chase.evidence.chain import EvidenceEvent
 
 T = TypeVar("T")
+ADVISORY_KEY = 7_423_001
 
 
 def _unwrap_optional(tp: Any) -> tuple[Any, bool]:
@@ -153,6 +154,10 @@ class SqlStore:
             yield
             return
         with self.engine.begin() as conn:
+            if self.engine.dialect.name == "postgresql":
+                # One engine transaction at a time across every worker, so two
+                # requests can never act on the same chase or fork a chain.
+                conn.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": ADVISORY_KEY})
             self._local.conn = conn
             try:
                 yield

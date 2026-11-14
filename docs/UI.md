@@ -3,6 +3,9 @@
 Three screens. The broker should open this for two minutes a day, clear a short list,
 and leave. It is not a dashboard to manage.
 
+Designs for the three screens are in Paper: https://app.paper.design/file/01M7E2JX9YN540Z2MN7K42VXAE
+The numbers in them are placeholders. "Median to filed" comes from `summary.median_ms_to_filed`.
+
 Every field below exists in the API today. Times arrive as epoch milliseconds; show
 them in the broker's time zone.
 

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from chase.api.app import create_app
-from chase.domain.models import HOUR_MS, Broker, Contact, Load
+from chase.domain.models import HOUR_MS, Broker, Load
 from chase.evidence import EvidenceEvent, verify_chain
 from tests.conftest import World, pod
 
@@ -150,23 +150,43 @@ def test_queue_acknowledge_and_switch(api):
 
     assert (
         client.post(
-            f"/v1/escalations/{escalation_id}/acknowledge", json={"by": ""}, headers=H
+            f"/v1/escalations/{escalation_id}/acknowledge",
+            json={"by": "", "resolution": "WAIVED"},
+            headers=H,
         ).status_code
         == 422
     )
     assert (
-        client.post("/v1/escalations/nope/acknowledge", json={"by": "J"}, headers=H).status_code
+        client.post(
+            "/v1/escalations/nope/acknowledge",
+            json={"by": "op-jermaine", "resolution": "WAIVED"},
+            headers=H,
+        ).status_code
         == 404
     )
+    ack = f"/v1/escalations/{escalation_id}/acknowledge"
+    stranger = {"by": "op-nobody", "resolution": "HANDLED_BY_HAND"}
+    assert client.post(ack, json=stranger, headers=H).status_code == 403
+    no_note = {"by": "op-jermaine", "resolution": "OTHER"}
+    assert client.post(ack, json=no_note, headers=H).status_code == 422
     done = client.post(
-        f"/v1/escalations/{escalation_id}/acknowledge",
-        json={"by": "Jermaine", "note": "called carrier on the number we have"},
+        ack,
+        json={
+            "by": "op-jermaine",
+            "resolution": "HANDLED_BY_HAND",
+            "note": "called carrier on the number we have",
+        },
         headers=H,
     )
-    assert done.json()["acknowledged_by"] == "Jermaine"
+    assert done.json()["acknowledged_by"] == "op-jermaine"
+    assert done.json()["resolution"] == "HANDLED_BY_HAND"
     assert client.get("/v1/brokers/brk-1/queue", headers=H).json()["escalations"] == []
 
-    off = client.post("/v1/outbound/switch", json={"enabled": False, "by": "J"}, headers=H)
+    owner_off = {"enabled": False, "by": "op-jermaine"}
+    assert client.post("/v1/outbound/switch", json=owner_off, headers=H).status_code == 403
+    off = client.post(
+        "/v1/outbound/switch", json={"enabled": False, "by": "op-platform"}, headers=H
+    )
     assert off.json() == {"enabled": False, "scope": "global"}
     new_load(world, client, n=2)
     sent = len(world.email.sent)
@@ -177,7 +197,9 @@ def test_queue_acknowledge_and_switch(api):
         is False
     )
     scoped = client.post(
-        "/v1/outbound/switch", json={"enabled": False, "by": "J", "broker_id": "brk-1"}, headers=H
+        "/v1/outbound/switch",
+        json={"enabled": False, "by": "op-jermaine", "broker_id": "brk-1"},
+        headers=H,
     )
     assert scoped.json()["scope"] == "brk-1"
 
@@ -205,17 +227,45 @@ def test_setup_routes_and_validation(api):
     assert client.put("/v1/carriers/car-9", json=carrier, headers=H).status_code == 422
     carrier["timezone"] = "America/Denver"
     assert client.put("/v1/carriers/car-9", json=carrier, headers=H).status_code == 200
-    contact = {"id": "con-9", "carrier_id": "car-9", "role": "DISPATCHER", "email": "d@c.example"}
-    assert client.put("/v1/contacts/con-9", json=contact, headers=H).json()["verified"] is True
-    stopped = world.store.get(Contact, "con-9")
-    stopped.sms_stopped = True
-    world.store.put(stopped)
+    contact = {
+        "id": "con-9",
+        "carrier_id": "car-9",
+        "role": "DISPATCHER",
+        "email": "d@c.example",
+        "phone": "+13035550101",
+    }
+    saved = client.put("/v1/contacts/con-9", json=contact, headers=H).json()
+    assert saved["verified"] is True and saved["sms_allowed"] is False
+    synced = client.put("/v1/contacts/con-9", json=contact | {"sms_consent": True}, headers=H)
+    assert synced.json()["sms_allowed"] is True
+
+    # The carrier texts STOP. A later sync from the broker's system cannot undo it.
+    stop = {
+        "broker_id": "brk-9",
+        "channel": "SMS",
+        "from_addr": "+13035550101",
+        "subject": "",
+        "body": "STOP",
+    }
+    client.post("/v1/inbound", json=stop, headers=H)
     resynced = client.put("/v1/contacts/con-9", json=contact | {"sms_consent": True}, headers=H)
-    assert resynced.json()["sms_stopped"] is True  # a STOP survives a re-sync
+    assert resynced.json()["sms_allowed"] is False
+
+    # Only an operator of this broker, holding written consent, can turn texts back on.
+    operator = {"id": "op-9", "broker_id": "brk-9", "name": "Ana", "role": "OWNER"}
+    assert client.put("/v1/operators/op-9", json=operator, headers=H).status_code == 200
+    platform_with_broker = operator | {"id": "op-x", "role": "PLATFORM"}
+    assert client.put("/v1/operators/op-x", json=platform_with_broker, headers=H).status_code == 422
+    regrant = {"granted": True, "source": "TMS_SYNC", "by": "op-9"}
+    consent = "/v1/contacts/con-9/consent"
+    assert client.post(consent, json=regrant, headers=H).status_code == 403
+    assert client.post(consent, json=regrant | {"by": "op-jermaine"}, headers=H).status_code == 403
+    written = client.post(consent, json=regrant | {"source": "WRITTEN"}, headers=H)
+    assert written.json() == {"recorded": True, "sms_allowed": True}
     assert (
         client.post(
             "/v1/contacts/approve",
-            json={"carrier_id": "car-9", "role": "DRIVER", "by": "J"},
+            json={"carrier_id": "car-9", "role": "DRIVER", "by": "op-9"},
             headers=H,
         ).status_code
         == 422

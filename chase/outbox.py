@@ -353,7 +353,7 @@ class OutboxDispatcher:
             return False
         phone = normalize_phone(message.to[0])
         return any(
-            c.verified and c.sms_consent and not c.sms_stopped
+            c.verified and self.engine.sms_allowed(c.id)
             for c in self.store.find(Contact, carrier_id=load.carrier_id)
             if c.phone and normalize_phone(c.phone) == phone
         )

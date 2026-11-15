@@ -22,8 +22,11 @@ from chase.domain.models import (
     Carrier,
     Channel,
     Chase,
+    ConsentSource,
     Contact,
     Load,
+    Party,
+    PartyRole,
     Role,
 )
 from chase.domain.schedule import to_local
@@ -72,9 +75,9 @@ def main() -> None:
     store.put(Carrier("car-demo", broker.id, "Redline Trucking", "MC482910", TZ))
     dispatch = "dispatch@redlinetrucking.example"
     store.put(Contact("con-d", "car-demo", Role.DISPATCHER, "Dana", dispatch))
-    store.put(
-        Contact("con-v", "car-demo", Role.DRIVER, "Sam", phone="+13125550142", sms_consent=True)
-    )
+    store.put(Contact("con-v", "car-demo", Role.DRIVER, "Sam", phone="+13125550142"))
+    engine.record_consent("con-v", True, ConsentSource.RATE_CONFIRMATION)
+    customer = Party("party-acme", broker.id, PartyRole.CUSTOMER, "Acme Foods")
 
     stories = {
         "TC-300001": "carrier sends a clean POD after the first email",
@@ -88,10 +91,10 @@ def main() -> None:
         load = Load(
             id=f"demo-{i}", broker_id=broker.id, carrier_id="car-demo", load_number=number,
             delivery_appt_ms=START - HOUR_MS, delivered_at_ms=START,
-            customer_name="Acme Foods", pickup_number="PU-77812", rate_cents=185_000,
+            customer_party_id=customer.id, pickup_number="PU-77812", rate_cents=185_000,
         )  # fmt: skip
         loads[number] = load
-        engine.intake_load(load)
+        engine.intake_load(load, [customer])
 
     def reply(number: str, body: str, attachment: bytes | None = None) -> None:
         engine.handle_inbound(
@@ -168,6 +171,15 @@ def main() -> None:
         f"\nSent {len(email.sent)} emails and {len(sms.sent)} texts (to stand-ins). "
         f"Filed {len(tms.filed)} documents."
     )
+    from chase.ontology import ONTOLOGY_VERSION
+    from chase.ontology.constraints import RULES, check_store
+
+    violations = check_store(store)
+    print(f"Ontology {ONTOLOGY_VERSION}: {len(RULES)} rules checked, {len(violations)} violations.")
+    for violation in violations:
+        print(f"  {violation}")
+    if violations:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

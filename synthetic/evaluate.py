@@ -28,6 +28,7 @@ from chase.domain.models import (
     Chase,
     ChaseState,
     Check,
+    ConsentSource,
     Document,
     Escalation,
     Load,
@@ -38,6 +39,7 @@ from chase.domain.models import (
 from chase.domain.schedule import to_local
 from chase.engine import ChaseEngine
 from chase.evidence import verify_chain
+from chase.ontology.constraints import check_store
 from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.memory import MemoryStore
@@ -88,8 +90,13 @@ def run(seed: int = SEED) -> dict:
     )
     for obj in [pack.broker, *pack.carriers, *pack.contacts]:
         store.put(obj)
+    for contact_id in pack.texting_contact_ids:
+        engine.record_consent(contact_id, True, ConsentSource.RATE_CONFIRMATION)
+    parties = {party.id: party for party in pack.parties}
     for load in pack.loads:
-        engine.intake_load(load)
+        engine.intake_load(
+            load, [parties[load.customer_party_id], parties[load.consignee_party_id]]
+        )
 
     outbox = OutboxDispatcher(engine)
 
@@ -171,11 +178,13 @@ def run(seed: int = SEED) -> dict:
     chains_ok = sum(1 for load in pack.loads if verify_chain(store.evidence(load.id)).ok)
     leaked = 0
     for load in pack.loads:
+        secrets = [parties[load.customer_party_id].name, load.pickup_number]
+        secrets += [parties[load.consignee_party_id].address]
         for message in email.sent:
             if load.load_number in message.subject and message.to != [pack.broker.rep_email]:
                 text = message.body.lower()
-                if load.customer_name.lower() in text or load.pickup_number.lower() in text:
-                    leaked += 1
+                leaked += sum(1 for secret in secrets if secret.lower() in text)
+    violations = check_store(store)
     risk_held = sum(
         1
         for load_id in pack.risk_load_ids
@@ -192,6 +201,7 @@ def run(seed: int = SEED) -> dict:
         "every_evidence_chain_verifies": chains_ok == len(pack.loads),
         "zero_sensitive_details_sent": leaked == 0,
         "every_money_message_held": risk_held == len(pack.risk_load_ids),
+        "zero_ontology_rule_violations": not violations,
     }
     return {
         "seed": seed,
@@ -204,6 +214,7 @@ def run(seed: int = SEED) -> dict:
         "quiet_hour_sends": quiet_violations,
         "evidence_chains_verified": f"{chains_ok}/{len(pack.loads)}",
         "money_messages_held": f"{risk_held}/{len(pack.risk_load_ids)}",
+        "ontology_rule_violations": [str(v) for v in violations],
         "final_states": dict(sorted(states.items())),
         "escalation_reasons": dict(sorted(reasons.items())),
         "messages": {

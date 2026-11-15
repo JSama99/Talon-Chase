@@ -39,8 +39,16 @@ Plain wording for each reason:
 | `OUTBOUND_BLOCKED` | A message was stopped before sending |
 | `SEND_FAILED` | Could not deliver a message to the carrier |
 
-Action on a row: open the load. Acknowledging happens there, with a required name and
-an optional note (`POST /v1/escalations/{id}/acknowledge`).
+Action on a row: open the load. Resolving happens there
+(`POST /v1/escalations/{id}/acknowledge`): the signed-in operator, one of four
+resolutions, and a note.
+
+| Resolution | Button | Note |
+| --- | --- | --- |
+| `HANDLED_BY_HAND` | Got it myself | optional |
+| `WAIVED` | Not needed | optional |
+| `DISPUTED` | In dispute | optional |
+| `OTHER` | Something else | required |
 
 ## 2. Load
 
@@ -52,15 +60,23 @@ an optional note (`POST /v1/escalations/{id}/acknowledge`).
   into one line ("Document checked: unsigned, asked again").
 - The document itself with its check result beside it.
 - If escalated: the reason, the detail, the carrier's phone numbers, and the
-  acknowledge control.
+  resolve control (above).
+- The requirement's status: open, met (with the document), or resolved by a person.
+- Parties (customer, consignee) are shown to the broker only; they never appear in
+  anything sent to the carrier.
 - "Export evidence" downloads the JSON. Show the head hash and whether the chain
   verifies (`verification.ok`).
 
 ## 3. Settings
 
-**Data:** `PATCH /v1/brokers/{id}/config`, `POST /v1/outbound/switch`, `POST /v1/contacts/approve`
+**Data:** `PATCH /v1/brokers/{id}/config`, `POST /v1/outbound/switch`, `POST /v1/contacts/approve`,
+`PUT /v1/operators/{id}`, `POST /v1/contacts/{id}/consent`
 
-- The off switch, large and first. Requires a name.
+- The off switch, large and first. Records the signed-in operator; this broker only.
+- People: the broker's operators, owner or staff, and whether each is active.
+- Text consent per contact: current state and its history (source, when, who). A
+  contact who replied STOP shows it, and can be turned back on only by recording
+  written consent.
 - Schedule: hours for the first text, third request and hand-off; quiet hours; morning
   hour. Show them as hours; the API takes milliseconds.
 - Strictness: reading confidence floor (0 to 100), maximum re-asks.
@@ -79,4 +95,6 @@ shows the load number and nothing else about the load, by design.
 
 ## Before a broker uses these
 
-The API has one admin key. A real screen needs sign-in and per-broker access first.
+The API has one admin key. A real screen needs sign-in first, mapped to an operator
+record: the operator id is what every action records, and the API already refuses
+operators acting outside their broker.

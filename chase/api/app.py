@@ -27,19 +27,27 @@ from chase.domain.models import (
     Channel,
     Chase,
     Check,
+    ConsentSource,
     Contact,
     Document,
     Escalation,
+    EscalationResolution,
     Inbound,
     Load,
+    Operator,
+    OperatorRole,
     OutboxMessage,
     OutboxStatus,
+    Party,
+    PartyRole,
+    Requirement,
     Role,
     WriteBack,
 )
 from chase.domain.states import ACTIVE_STATES
 from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
+from chase.evidence import canonical_json, sha256_hex
 from chase.outbox import OutboxDispatcher
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -119,7 +127,24 @@ class InboundIn(BaseModel):
 
 
 class AckIn(BaseModel):
-    by: str = Field(min_length=1)
+    by: str = Field(min_length=1, description="Operator id")
+    resolution: EscalationResolution
+    note: str = ""
+
+
+class OperatorIn(BaseModel):
+    id: str
+    broker_id: str = ""
+    name: str = Field(min_length=1)
+    role: OperatorRole
+    email: str = ""
+    active: bool = True
+
+
+class ConsentIn(BaseModel):
+    granted: bool
+    source: ConsentSource
+    by: str = Field(min_length=1, description="Operator id")
     note: str = ""
 
 
@@ -203,8 +228,23 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
                 return fn(*args, **kwargs)
             except KeyError as exc:
                 raise HTTPException(404, str(exc).strip("'\"")) from exc
-            except ValueError as exc:
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:  # includes OntologyError
                 raise HTTPException(422, str(exc)) from exc
+
+    def party_for(broker_id: str, role: PartyRole, name: str, address: str = "") -> Party:
+        """One party per business: the id comes from the broker, role and name."""
+        key = canonical_json({"broker": broker_id, "name": name.strip().lower(), "role": role})
+        party_id = f"party-{sha256_hex(key)[:20]}"
+        existing = store.get(Party, party_id)
+        return Party(
+            id=party_id,
+            broker_id=broker_id,
+            role=role,
+            name=name.strip(),
+            address=address.strip() or (existing.address if existing else ""),
+        )
 
     def need(cls: type, obj_id: str):
         obj = store.get(cls, obj_id)
@@ -290,12 +330,42 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
 
         def save():
             need(Carrier, body.carrier_id)
-            existing = store.get(Contact, contact_id)
-            contact = Contact(**body.model_dump(), verified=True, source="tms")
-            if existing is not None:
-                contact.sms_stopped = existing.sms_stopped  # a STOP is never undone by a sync
+            contact = Contact(**body.model_dump(exclude={"sms_consent"}), verified=True)
             store.put(contact)
-            return contact
+            # The broker's system reports consent; a change becomes a consent record.
+            # A STOP reply is never undone by a sync: that needs an operator.
+            if body.sms_consent != engine.sms_allowed(contact.id):
+                has_history = engine.latest_consent(contact.id) is not None
+                if body.sms_consent or has_history:
+                    with contextlib.suppress(PermissionError):
+                        engine.record_consent(contact.id, body.sms_consent, ConsentSource.TMS_SYNC)
+            return plain(contact) | {"sms_allowed": engine.sms_allowed(contact.id)}
+
+        return run(save)
+
+    @app.post("/v1/contacts/{contact_id}/consent", dependencies=[Depends(admin)])
+    def post_consent(contact_id: str, body: ConsentIn) -> dict:
+        def save():
+            consent = engine.record_consent(
+                contact_id, body.granted, body.source, by=body.by, note=body.note
+            )
+            return {"recorded": consent is not None, "sms_allowed": engine.sms_allowed(contact_id)}
+
+        return run(save)
+
+    @app.put("/v1/operators/{operator_id}", dependencies=[Depends(admin)])
+    def put_operator(operator_id: str, body: OperatorIn) -> dict:
+        if body.id != operator_id:
+            raise HTTPException(422, "id in the path and body differ")
+        if (body.role is OperatorRole.PLATFORM) == bool(body.broker_id):
+            raise HTTPException(422, "a platform operator has no broker; everyone else has one")
+
+        def save():
+            if body.broker_id:
+                need(Broker, body.broker_id)
+            operator = Operator(**body.model_dump())
+            store.put(operator)
+            return operator
 
         return plain(run(save))
 
@@ -326,7 +396,25 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
             existing = store.get(Load, body.id)
             if existing is not None and existing.broker_id != body.broker_id:
                 raise ValueError("load id is already used by another broker")
-            chase = engine.intake_load(Load(**body.model_dump()))
+            # The TMS sends names; the ontology keeps them as parties, one per business.
+            parties = []
+            fields = body.model_dump(
+                exclude={"customer_name", "consignee_name", "consignee_address"}
+            )
+            if body.customer_name.strip():
+                parties.append(party_for(body.broker_id, PartyRole.CUSTOMER, body.customer_name))
+                fields["customer_party_id"] = parties[-1].id
+            if body.consignee_name.strip():
+                parties.append(
+                    party_for(
+                        body.broker_id,
+                        PartyRole.CONSIGNEE,
+                        body.consignee_name,
+                        body.consignee_address,
+                    )
+                )
+                fields["consignee_party_id"] = parties[-1].id
+            chase = engine.intake_load(Load(**fields), parties)
             return {"load_id": body.id, "chase": plain(chase)}
 
         return run(intake)
@@ -492,6 +580,8 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
                 "documents": plain(documents),
                 "checks": plain(store.find(Check, chase_id=cid)),
                 "escalations": plain(store.find(Escalation, load_id=load_id)),
+                "parties": plain(engine.parties(load)),
+                "requirements": plain(store.find(Requirement, load_id=load_id)),
                 "writebacks": plain(store.find(WriteBack, chase_id=cid)),
                 "messages": plain(
                     sorted(
@@ -509,7 +599,15 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
 
     @app.post("/v1/escalations/{escalation_id}/acknowledge", dependencies=[Depends(admin)])
     def acknowledge(escalation_id: str, body: AckIn) -> dict:
-        return plain(run(engine.acknowledge_escalation, escalation_id, by=body.by, note=body.note))
+        return plain(
+            run(
+                engine.acknowledge_escalation,
+                escalation_id,
+                by=body.by,
+                resolution=body.resolution,
+                note=body.note,
+            )
+        )
 
     @app.post("/v1/outbound/switch", dependencies=[Depends(admin)])
     def switch(body: SwitchIn) -> dict:

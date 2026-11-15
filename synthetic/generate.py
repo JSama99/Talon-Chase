@@ -15,7 +15,7 @@ import random
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from chase.domain.models import HOUR_MS, Broker, Carrier, Contact, Load, Role
+from chase.domain.models import HOUR_MS, Broker, Carrier, Contact, Load, Party, PartyRole, Role
 
 SEED = 20261114
 LOAD_COUNT = 200
@@ -76,6 +76,9 @@ class Pack:
     contacts: list[Contact]
     loads: list[Load]
     fixtures: list[Fixture]
+    parties: list[Party] = field(default_factory=list)
+    # Drivers who agreed to texts in their rate confirmation.
+    texting_contact_ids: list[str] = field(default_factory=list)
     silent_load_ids: list[str] = field(default_factory=list)
     promise_load_ids: list[str] = field(default_factory=list)
     out_of_office_load_ids: list[str] = field(default_factory=list)
@@ -107,7 +110,7 @@ def build_pack(start_ms: int, seed: int = SEED) -> Pack:
         sms_number="+14045550100",
         adapter="fake_api",
     )
-    carriers, contacts = [], []
+    carriers, contacts, texting = [], [], []
     for i in range(1, CARRIER_COUNT + 1):
         name = f"{NAME_A[i % len(NAME_A)]} {NAME_B[i % len(NAME_B)]} {i}"
         slug = name.lower().replace(" ", "")
@@ -124,35 +127,44 @@ def build_pack(start_ms: int, seed: int = SEED) -> Pack:
                 f"dispatch@{slug}.example",
             )
         )
-        contacts.append(
-            Contact(
-                f"con-{i:03d}-v",
-                carrier.id,
-                Role.DRIVER,
-                "Driver",
-                phone=f"+1312555{1000 + i:04d}",
-                sms_consent=rng.random() < 0.6,
-            )
+        driver = Contact(
+            f"con-{i:03d}-v", carrier.id, Role.DRIVER, "Driver", phone=f"+1312555{1000 + i:04d}"
         )
+        contacts.append(driver)
+        if rng.random() < 0.6:
+            texting.append(driver.id)
 
-    loads = []
+    loads, parties = [], []
     for n in range(1, LOAD_COUNT + 1):
         carrier = carriers[(n - 1) % CARRIER_COUNT]
         appt = start_ms - rng.randrange(1, 6) * HOUR_MS
+        load_id = f"load-{n:04d}"
+        po_number = f"PO{rng.randrange(10000, 99999)}"
+        expected_pages = rng.choice([1, 1, 1, 2])
+        customer = Party(
+            f"{load_id}-customer", broker.id, PartyRole.CUSTOMER, rng.choice(CUSTOMERS)
+        )
+        consignee = Party(
+            f"{load_id}-consignee",
+            broker.id,
+            PartyRole.CONSIGNEE,
+            rng.choice(CONSIGNEES),
+            f"{rng.randrange(100, 9999)} Industrial Blvd",
+        )
+        parties += [customer, consignee]
         loads.append(
             Load(
-                id=f"load-{n:04d}",
+                id=load_id,
                 broker_id=broker.id,
                 carrier_id=carrier.id,
                 load_number=f"TC-{100000 + n}",
                 delivery_appt_ms=appt,
                 bol_number=f"BOL{550000 + n}",
-                po_number=f"PO{rng.randrange(10000, 99999)}",
-                expected_pages=rng.choice([1, 1, 1, 2]),
+                po_number=po_number,
+                expected_pages=expected_pages,
                 delivered_at_ms=start_ms,
-                customer_name=rng.choice(CUSTOMERS),
-                consignee_name=rng.choice(CONSIGNEES),
-                consignee_address=f"{rng.randrange(100, 9999)} Industrial Blvd",
+                customer_party_id=customer.id,
+                consignee_party_id=consignee.id,
                 pickup_number=f"PU-{rng.randrange(10000, 99999)}",
                 rate_cents=rng.randrange(600, 4200) * 100,
             )
@@ -233,7 +245,7 @@ def build_pack(start_ms: int, seed: int = SEED) -> Pack:
         )
 
     rest = [load_id for load_id in order if load_id not in used]
-    pack = Pack(broker, carriers, contacts, loads, fixtures)
+    pack = Pack(broker, carriers, contacts, loads, fixtures, parties, texting)
     pack.promise_load_ids = rest[:20]
     pack.out_of_office_load_ids = rest[20:30]
     pack.risk_load_ids = rest[30:35]
@@ -246,6 +258,8 @@ def write_pack(pack: Pack, out: Path) -> None:
     (out / "loads.json").write_text(json.dumps([asdict(x) for x in pack.loads], indent=1))
     (out / "carriers.json").write_text(json.dumps([asdict(x) for x in pack.carriers], indent=1))
     (out / "contacts.json").write_text(json.dumps([asdict(x) for x in pack.contacts], indent=1))
+    (out / "parties.json").write_text(json.dumps([asdict(x) for x in pack.parties], indent=1))
+    (out / "texting_contacts.json").write_text(json.dumps(pack.texting_contact_ids, indent=1))
     index = []
     for fixture in pack.fixtures:
         (out / "pods" / f"{fixture.filename}.json").write_bytes(fixture.content())

@@ -144,9 +144,15 @@ def test_acknowledging_closes_the_chase_and_needs_a_name(world: World):
     queue = world.engine.queue("brk-1")
     assert queue["escalations"][0]["load_number"] == load.load_number
     assert queue["escalations"][0]["carrier_phones"] == [world.driver.phone]
+    with pytest.raises(PermissionError):
+        world.engine.acknowledge_escalation(escalation.id, by="", resolution="WAIVED")
+    with pytest.raises(PermissionError):
+        world.engine.acknowledge_escalation(escalation.id, by="op-stranger", resolution="WAIVED")
     with pytest.raises(ValueError):
-        world.engine.acknowledge_escalation(escalation.id, by=" ")
-    world.engine.acknowledge_escalation(escalation.id, by="Jermaine", note="called consignee")
+        world.engine.acknowledge_escalation(escalation.id, by="op-jermaine", resolution="OTHER")
+    world.engine.acknowledge_escalation(
+        escalation.id, by="op-jermaine", resolution="HANDLED_BY_HAND", note="called consignee"
+    )
     chase = world.chase(load)
     assert chase.state is ChaseState.CLOSED and chase.closed_reason == "escalation_acknowledged"
     assert world.engine.queue("brk-1")["escalations"] == []
@@ -255,9 +261,9 @@ def test_free_mail_address_is_never_treated_as_the_same_company(world: World):
 
 def test_approved_contact_is_used_on_the_next_load(world: World):
     contact = world.engine.approve_contact(
-        "car-1", Role.DISPATCHER, by="Jermaine", email="nights@redlinetrucking.example"
+        "car-1", Role.DISPATCHER, by="op-jermaine", email="nights@redlinetrucking.example"
     )
-    assert contact.source == "approved:Jermaine"
+    assert contact.source == "approved:op-jermaine"
     load = world.make_load()
     world.tick()
     assert set(world.email.sent[0].to) == {world.dispatcher.email, contact.email}

@@ -91,11 +91,18 @@ hash           e416250130e9984385f335a43fc2ef0965c46aa6d2c0db8ef4582714b2b51a8b
 | `document.received`, `document.rerouted` | A file arrived: its SHA-256, name and type |
 | `check.completed` | Result and reasons for one document |
 | `writeback.pending`, `writeback.succeeded`, `writeback.failed`, `writeback.fallback` | Filing attempts, with adapter and receipt; `pending` while the packet email is in the outbox |
-| `escalation.opened`, `escalation.acknowledged` | Handed to a person; taken by a named person |
-| `inbound.unmatched`, `contact.approved`, `sms.stopped`, `outbound.switch` | On the broker or system chain; `inbound.unmatched` is a message that could not be tied to a load |
+| `escalation.opened`, `escalation.acknowledged` | Handed to a person; resolved by a named operator, with a resolution (`HANDLED_BY_HAND`, `WAIVED`, `DISPUTED`, or `OTHER` with a note) |
+| `requirement.closed` | The document a load needed is in hand (`MET`, naming the document) or a person settled it (`RESOLVED_BY_PERSON`) |
+| `inbound.unmatched`, `contact.approved`, `consent.recorded`, `outbound.switch` | On the broker or system chain; `inbound.unmatched` is a message that could not be tied to a load; `consent.recorded` is a change to a contact's permission to receive texts, with its source (a STOP reply names the message) |
 
 Message bodies and file contents are not in the chain. Their SHA-256 hashes are, so a
 stored message or document can be shown to be the one the chain refers to.
+
+Every payload has a fixed shape, given per kind in the ontology schema
+([ONTOLOGY.md](ONTOLOGY.md), `ontology/talon-chase.schema.json`, `$defs/payload.<kind>`).
+Stores refuse an event whose kind is unknown or whose payload does not match. An
+export carries `ontology.version` and `ontology.schema_sha256`, so a verifier knows
+which shapes the events were written against.
 
 ## What this proves, and its limits
 

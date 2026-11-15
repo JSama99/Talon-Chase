@@ -1,0 +1,3146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:talonsight:talon-chase:ontology:1.0.0",
+  "title": "Talon Chase ontology",
+  "description": "Entities, value types, enumerations and evidence payloads of Talon Chase. Every object is closed. x-ref names the entity an id points at; x-sensitive marks values that must never be sent to a carrier.",
+  "x-version": "1.0.0",
+  "x-groups": {
+    "Who": [
+      "Broker",
+      "Operator",
+      "Carrier",
+      "Contact"
+    ],
+    "Freight": [
+      "Load",
+      "Party"
+    ],
+    "Need": [
+      "Requirement",
+      "Chase"
+    ],
+    "Exchange": [
+      "Attempt",
+      "OutboxMessage",
+      "Inbound"
+    ],
+    "Proof": [
+      "Document",
+      "Check",
+      "EvidenceEvent"
+    ],
+    "Outcome": [
+      "WriteBack",
+      "Escalation"
+    ],
+    "Policy": [
+      "BrokerConfig",
+      "Consent"
+    ]
+  },
+  "x-retired-kinds": [
+    "sms.stopped"
+  ],
+  "$defs": {
+    "Attachment": {
+      "type": "object",
+      "title": "Attachment",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "content_sha256"
+      ],
+      "properties": {
+        "filename": {
+          "description": "Name as sent.",
+          "type": "string"
+        },
+        "content_sha256": {
+          "description": "SHA-256 of the bytes; the file is stored under it.",
+          "type": "string"
+        }
+      },
+      "description": "A file referred to by its content hash."
+    },
+    "Attempt": {
+      "type": "object",
+      "title": "Attempt",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "chase_id",
+        "step",
+        "channel",
+        "to",
+        "cc",
+        "queued_at_ms",
+        "outbox_id"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "chase_id": {
+          "description": "The chase.",
+          "type": "string",
+          "x-ref": "Chase"
+        },
+        "step": {
+          "description": "Which request in the schedule.",
+          "$ref": "#/$defs/Step"
+        },
+        "channel": {
+          "description": "Email or text.",
+          "$ref": "#/$defs/Channel"
+        },
+        "to": {
+          "description": "Recipients.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cc": {
+          "description": "Copied, e.g. the broker's rep on the third request.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "queued_at_ms": {
+          "description": "When it was decided and queued.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "outbox_id": {
+          "description": "The message that delivers it.",
+          "type": "string",
+          "x-ref": "OutboxMessage"
+        }
+      },
+      "description": "A request the agent decided to make. Its delivery is the outbox message.",
+      "x-group": "Exchange"
+    },
+    "Broker": {
+      "type": "object",
+      "title": "Broker",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "chase_mailbox",
+        "rep_email",
+        "sms_number",
+        "adapter",
+        "outbound_enabled",
+        "config"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Trading name, shown to carriers in every message.",
+          "type": "string"
+        },
+        "chase_mailbox": {
+          "description": "The broker's own address that requests come from, e.g. pods@.",
+          "type": "string"
+        },
+        "rep_email": {
+          "description": "Where packets and copied third requests go.",
+          "type": "string"
+        },
+        "sms_number": {
+          "description": "The number texts come from; empty means no texts.",
+          "type": "string"
+        },
+        "adapter": {
+          "description": "Where checked PODs are filed: an adapter name.",
+          "type": "string"
+        },
+        "outbound_enabled": {
+          "description": "This broker's kill switch.",
+          "type": "boolean"
+        },
+        "config": {
+          "description": "Schedule and policy.",
+          "$ref": "#/$defs/BrokerConfig"
+        }
+      },
+      "description": "A freight brokerage using Talon Chase.",
+      "x-group": "Who"
+    },
+    "BrokerConfig": {
+      "type": "object",
+      "title": "BrokerConfig",
+      "additionalProperties": false,
+      "required": [
+        "no_status_grace_ms",
+        "sms_delay_ms",
+        "third_attempt_ms",
+        "escalate_wait_ms",
+        "min_gap_ms",
+        "third_min_gap_ms",
+        "promise_grace_ms",
+        "reask_wait_ms",
+        "quiet_start_hour",
+        "quiet_end_hour",
+        "morning_hour",
+        "max_reasks",
+        "date_tolerance_ms",
+        "confidence_floor",
+        "writeback_retry_backoff_ms",
+        "upload_link_ttl_ms",
+        "send_retry_backoff_ms"
+      ],
+      "properties": {
+        "no_status_grace_ms": {
+          "description": "Open a chase this long after the delivery appointment if the load has no status.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "sms_delay_ms": {
+          "description": "Text the driver this long after the first email.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "third_attempt_ms": {
+          "description": "Third request this long after the first.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "escalate_wait_ms": {
+          "description": "Hand to a person this long after the third request.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_gap_ms": {
+          "description": "Shortest gap between two requests.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "third_min_gap_ms": {
+          "description": "Shortest gap between the second and third requests.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "promise_grace_ms": {
+          "description": "How long a carrier's promise ('will send tomorrow') pushes the next ask back.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "reask_wait_ms": {
+          "description": "After a re-ask, wait this long before the plan continues.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "quiet_start_hour": {
+          "description": "Carrier-local hour when quiet hours begin.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "quiet_end_hour": {
+          "description": "Carrier-local hour when quiet hours end.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "morning_hour": {
+          "description": "Carrier-local hour of the second request.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_reasks": {
+          "description": "Re-asks for a failing document before a person decides.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "date_tolerance_ms": {
+          "description": "How far the POD's delivery date may be from the appointment.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "confidence_floor": {
+          "description": "Below this reading confidence (0 to 100), a person decides.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "writeback_retry_backoff_ms": {
+          "description": "Waits between filing retries; when it runs out, the next rung is tried.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "upload_link_ttl_ms": {
+          "description": "How long an upload link stays valid.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "send_retry_backoff_ms": {
+          "description": "Waits between delivery retries; when it runs out, the message fails.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "description": "Per-broker schedule and policy. Every value can be changed by the broker.",
+      "x-group": "Policy"
+    },
+    "Carrier": {
+      "type": "object",
+      "title": "Carrier",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "name",
+        "mc_number",
+        "timezone"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker whose carrier record this is.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "name": {
+          "description": "Carrier name.",
+          "type": "string"
+        },
+        "mc_number": {
+          "description": "FMCSA motor carrier number.",
+          "type": "string"
+        },
+        "timezone": {
+          "description": "IANA time zone; quiet hours and the schedule use it.",
+          "type": "string"
+        }
+      },
+      "description": "A trucking company a broker gives loads to.",
+      "x-group": "Who"
+    },
+    "Channel": {
+      "title": "Channel",
+      "enum": [
+        "EMAIL",
+        "SMS",
+        "UPLOAD"
+      ],
+      "description": "How a message travels."
+    },
+    "Chase": {
+      "type": "object",
+      "title": "Chase",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "load_id",
+        "broker_id",
+        "requirement_id",
+        "opened_at_ms",
+        "state",
+        "next_step",
+        "next_action_at_ms",
+        "attempts_sent",
+        "reasks_sent",
+        "plan",
+        "fail_reasons",
+        "reply_to_contact_id",
+        "passed_document_id",
+        "writeback_id",
+        "closed_at_ms",
+        "closed_reason",
+        "kill_noted"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "load_id": {
+          "description": "The load.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "broker_id": {
+          "description": "The load's broker.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "requirement_id": {
+          "description": "What is being chased.",
+          "type": "string",
+          "x-ref": "Requirement"
+        },
+        "opened_at_ms": {
+          "description": "When the chase opened.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "description": "Where it stands.",
+          "$ref": "#/$defs/ChaseState"
+        },
+        "next_step": {
+          "description": "What it will do next.",
+          "$ref": "#/$defs/Step"
+        },
+        "next_action_at_ms": {
+          "description": "When the next step is due.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempts_sent": {
+          "description": "Requests made in the schedule (first, second, third).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "reasks_sent": {
+          "description": "Re-asks made after a failed check.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "plan": {
+          "description": "The schedule worked out when it opened.",
+          "$ref": "#/$defs/Plan"
+        },
+        "fail_reasons": {
+          "description": "Why the last document failed.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reply_to_contact_id": {
+          "description": "Who sent the last document; re-asks go to them.",
+          "type": "string",
+          "x-ref": "Contact",
+          "x-ref-optional": true
+        },
+        "passed_document_id": {
+          "description": "The document that passed.",
+          "type": "string",
+          "x-ref": "Document",
+          "x-ref-optional": true
+        },
+        "writeback_id": {
+          "description": "The current filing.",
+          "type": "string",
+          "x-ref": "WriteBack",
+          "x-ref-optional": true
+        },
+        "closed_at_ms": {
+          "description": "When it closed.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closed_reason": {
+          "description": "'filed' or 'escalation_acknowledged'.",
+          "type": "string"
+        },
+        "kill_noted": {
+          "description": "A blocked step was already recorded.",
+          "type": "boolean"
+        }
+      },
+      "description": "The agent's effort to obtain one requirement.",
+      "x-group": "Need"
+    },
+    "ChaseState": {
+      "title": "ChaseState",
+      "enum": [
+        "OPEN",
+        "ASKED",
+        "RECEIVED",
+        "CHECKING",
+        "PASSED",
+        "FAILED_CHECK",
+        "FILED",
+        "CLOSED",
+        "ESCALATED"
+      ],
+      "description": "Where one chase for paperwork stands."
+    },
+    "Check": {
+      "type": "object",
+      "title": "Check",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "chase_id",
+        "document_id",
+        "result",
+        "reasons",
+        "checked_at_ms",
+        "reroute_load_id"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "chase_id": {
+          "description": "The chase.",
+          "type": "string",
+          "x-ref": "Chase"
+        },
+        "document_id": {
+          "description": "The document.",
+          "type": "string",
+          "x-ref": "Document"
+        },
+        "result": {
+          "description": "Pass, fail, exception or reroute.",
+          "$ref": "#/$defs/CheckResult"
+        },
+        "reasons": {
+          "description": "Why, in short codes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "checked_at_ms": {
+          "description": "When.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "reroute_load_id": {
+          "description": "The load it belongs to instead, for REROUTE.",
+          "type": "string",
+          "x-ref": "Load",
+          "x-ref-optional": true
+        }
+      },
+      "description": "The verdict on one document.",
+      "x-group": "Proof"
+    },
+    "CheckResult": {
+      "title": "CheckResult",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "EXCEPTION",
+        "REROUTE"
+      ]
+    },
+    "Consent": {
+      "type": "object",
+      "title": "Consent",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "contact_id",
+        "channel",
+        "status",
+        "source",
+        "recorded_at_ms",
+        "recorded_by",
+        "inbound_id",
+        "note"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "contact_id": {
+          "description": "The contact this applies to.",
+          "type": "string",
+          "x-ref": "Contact"
+        },
+        "channel": {
+          "description": "Always SMS for now.",
+          "$ref": "#/$defs/Channel"
+        },
+        "status": {
+          "description": "Granted or withdrawn.",
+          "$ref": "#/$defs/ConsentStatus"
+        },
+        "source": {
+          "description": "Where this record came from.",
+          "$ref": "#/$defs/ConsentSource"
+        },
+        "recorded_at_ms": {
+          "description": "When it was recorded.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "recorded_by": {
+          "description": "The operator who recorded it; empty when it came from the carrier or a sync.",
+          "type": "string",
+          "x-ref": "Operator",
+          "x-ref-optional": true
+        },
+        "inbound_id": {
+          "description": "The carrier message it came from, for a STOP reply.",
+          "type": "string",
+          "x-ref": "Inbound",
+          "x-ref-optional": true
+        },
+        "note": {
+          "description": "Free text from the operator.",
+          "type": "string"
+        }
+      },
+      "description": "One recorded change to whether a contact may be texted. The latest record wins.",
+      "x-group": "Policy"
+    },
+    "ConsentSource": {
+      "title": "ConsentSource",
+      "enum": [
+        "RATE_CONFIRMATION",
+        "CARRIER_PACKET",
+        "WRITTEN",
+        "TMS_SYNC",
+        "STOP_REPLY"
+      ],
+      "description": "Where a consent record came from."
+    },
+    "ConsentStatus": {
+      "title": "ConsentStatus",
+      "enum": [
+        "GRANTED",
+        "WITHDRAWN"
+      ]
+    },
+    "Contact": {
+      "type": "object",
+      "title": "Contact",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "carrier_id",
+        "role",
+        "name",
+        "email",
+        "phone",
+        "verified",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "carrier_id": {
+          "description": "Their carrier.",
+          "type": "string",
+          "x-ref": "Carrier"
+        },
+        "role": {
+          "description": "Dispatcher or driver.",
+          "$ref": "#/$defs/Role"
+        },
+        "name": {
+          "description": "Name.",
+          "type": "string"
+        },
+        "email": {
+          "description": "Email address.",
+          "type": "string"
+        },
+        "phone": {
+          "description": "Mobile number.",
+          "type": "string"
+        },
+        "verified": {
+          "description": "From the carrier record or approved by an operator.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "'tms', or 'approved:<operator id>'.",
+          "type": "string"
+        }
+      },
+      "description": "A person at a carrier the agent may write to. Only verified contacts are used.",
+      "x-group": "Who"
+    },
+    "DocType": {
+      "title": "DocType",
+      "enum": [
+        "POD",
+        "LUMPER_RECEIPT",
+        "DETENTION_RECEIPT",
+        "SCALE_TICKET",
+        "CARRIER_INVOICE",
+        "RATE_CONFIRMATION",
+        "OTHER"
+      ],
+      "description": "What a document is."
+    },
+    "Document": {
+      "type": "object",
+      "title": "Document",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "load_id",
+        "inbound_id",
+        "filename",
+        "content_sha256",
+        "received_at_ms",
+        "doc_type",
+        "extraction"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "load_id": {
+          "description": "The load it is filed under.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "inbound_id": {
+          "description": "The message it came in.",
+          "type": "string",
+          "x-ref": "Inbound"
+        },
+        "filename": {
+          "description": "Name as sent.",
+          "type": "string"
+        },
+        "content_sha256": {
+          "description": "SHA-256 of the bytes.",
+          "type": "string"
+        },
+        "received_at_ms": {
+          "description": "When it arrived.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "doc_type": {
+          "description": "What the reader says it is.",
+          "$ref": "#/$defs/DocType"
+        },
+        "extraction": {
+          "description": "What the reader read from it.",
+          "$ref": "#/$defs/Extraction"
+        }
+      },
+      "description": "A file received for a load.",
+      "x-group": "Proof"
+    },
+    "Escalation": {
+      "type": "object",
+      "title": "Escalation",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "chase_id",
+        "load_id",
+        "broker_id",
+        "reason",
+        "detail",
+        "created_at_ms",
+        "acknowledged_by",
+        "acknowledged_at_ms",
+        "resolution",
+        "note"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "chase_id": {
+          "description": "The chase.",
+          "type": "string",
+          "x-ref": "Chase"
+        },
+        "load_id": {
+          "description": "The load.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "broker_id": {
+          "description": "The broker.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "reason": {
+          "description": "Why a person is needed.",
+          "$ref": "#/$defs/EscalationReason"
+        },
+        "detail": {
+          "description": "What happened, in a sentence.",
+          "type": "string"
+        },
+        "created_at_ms": {
+          "description": "When.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "acknowledged_by": {
+          "description": "The operator who finished it.",
+          "type": "string",
+          "x-ref": "Operator",
+          "x-ref-optional": true
+        },
+        "acknowledged_at_ms": {
+          "description": "When they finished it.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolution": {
+          "description": "How they finished it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EscalationResolution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "description": "What they did, in their words.",
+          "type": "string"
+        }
+      },
+      "description": "A load handed to a person, and how they finished it.",
+      "x-group": "Outcome"
+    },
+    "EscalationReason": {
+      "title": "EscalationReason",
+      "enum": [
+        "NO_RESPONSE",
+        "RISK",
+        "UNKNOWN_SENDER",
+        "DOCUMENT_EXCEPTION",
+        "LOW_CONFIDENCE",
+        "NEEDS_HUMAN",
+        "WRONG_PERSON",
+        "WRITEBACK_FAILED",
+        "NO_CONTACT",
+        "REASK_LIMIT",
+        "OUTBOUND_BLOCKED",
+        "SEND_FAILED"
+      ]
+    },
+    "EscalationResolution": {
+      "title": "EscalationResolution",
+      "enum": [
+        "HANDLED_BY_HAND",
+        "WAIVED",
+        "DISPUTED",
+        "OTHER"
+      ],
+      "description": "How a person finished an escalation."
+    },
+    "EvidenceEvent": {
+      "type": "object",
+      "title": "EvidenceEvent",
+      "additionalProperties": false,
+      "required": [
+        "chain_id",
+        "seq",
+        "kind",
+        "at_ms",
+        "payload",
+        "payload_digest",
+        "prev_hash",
+        "hash"
+      ],
+      "properties": {
+        "chain_id": {
+          "type": "string",
+          "description": "The load id, or broker:<id>, or system."
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Position in the chain, from 0, no gaps."
+        },
+        "kind": {
+          "description": "What happened.",
+          "enum": [
+            "attempt.queued",
+            "chase.closed",
+            "chase.opened",
+            "chase.rescheduled",
+            "chase.state",
+            "check.completed",
+            "consent.recorded",
+            "contact.approved",
+            "document.received",
+            "document.rerouted",
+            "escalation.acknowledged",
+            "escalation.opened",
+            "inbound.classified",
+            "inbound.held",
+            "inbound.late",
+            "inbound.received",
+            "inbound.unmatched",
+            "load.delivered",
+            "load.ready_to_invoice",
+            "load.received",
+            "message.cancelled",
+            "message.deferred",
+            "message.duplicate",
+            "message.failed",
+            "message.reclaimed",
+            "message.retry",
+            "message.sent",
+            "outbound.blocked",
+            "outbound.refused",
+            "outbound.switch",
+            "requirement.closed",
+            "sms.skipped",
+            "writeback.failed",
+            "writeback.fallback",
+            "writeback.pending",
+            "writeback.succeeded"
+          ]
+        },
+        "at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "When it happened."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Details; see the payload definition for the kind."
+        },
+        "payload_digest": {
+          "description": "SHA-256 of the canonical payload.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "prev_hash": {
+          "description": "The previous event's hash; 64 zeros for the first.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "hash": {
+          "description": "SHA-256 over the canonical header and prev_hash.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "x-group": "Proof",
+      "description": "One entry in a load's hash chain. The payload's shape depends on the kind.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "attempt.queued"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.attempt.queued"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "chase.closed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.chase.closed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "chase.opened"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.chase.opened"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "chase.rescheduled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.chase.rescheduled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "chase.state"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.chase.state"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "check.completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.check.completed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "consent.recorded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.consent.recorded"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "contact.approved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.contact.approved"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "document.received"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.document.received"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "document.rerouted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.document.rerouted"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "escalation.acknowledged"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.escalation.acknowledged"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "escalation.opened"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.escalation.opened"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inbound.classified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.classified"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inbound.held"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.held"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inbound.late"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.late"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inbound.received"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.received"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "inbound.unmatched"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.unmatched"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "load.delivered"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.load.delivered"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "load.ready_to_invoice"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.load.ready_to_invoice"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "load.received"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.load.received"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.cancelled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.cancelled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.deferred"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.deferred"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.duplicate"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.duplicate"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.failed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.reclaimed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.reclaimed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.retry"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.retry"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.sent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.sent"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "outbound.blocked"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.outbound.blocked"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "outbound.refused"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.outbound.refused"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "outbound.switch"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.outbound.switch"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "requirement.closed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.requirement.closed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sms.skipped"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.sms.skipped"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "writeback.failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.writeback.failed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "writeback.fallback"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.writeback.fallback"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "writeback.pending"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.writeback.pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "writeback.succeeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.writeback.succeeded"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Extraction": {
+      "type": "object",
+      "title": "Extraction",
+      "additionalProperties": false,
+      "required": [
+        "doc_type",
+        "readable",
+        "reference_numbers",
+        "signature_present",
+        "delivery_date_ms",
+        "page_count",
+        "exception_notes",
+        "confidence"
+      ],
+      "properties": {
+        "doc_type": {
+          "description": "What kind of document it is.",
+          "$ref": "#/$defs/DocType"
+        },
+        "readable": {
+          "description": "Whether the page could be read at all.",
+          "type": "boolean"
+        },
+        "reference_numbers": {
+          "description": "Load, BOL and PO numbers printed on it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "signature_present": {
+          "description": "Whether the receiver signed it.",
+          "type": "boolean"
+        },
+        "delivery_date_ms": {
+          "description": "Delivery date written on it.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_count": {
+          "description": "Pages received.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "exception_notes": {
+          "description": "Shortage, damage or refusal noted by the receiver.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "description": "How sure the reader is, 0 to 100.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "What the reader saw on a document."
+    },
+    "Inbound": {
+      "type": "object",
+      "title": "Inbound",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "channel",
+        "from_addr",
+        "received_at_ms",
+        "subject",
+        "body",
+        "attachments",
+        "external_id",
+        "status",
+        "chase_id",
+        "classification",
+        "hold_reason",
+        "trusted"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker it was sent to.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "channel": {
+          "description": "Email, text or upload link.",
+          "$ref": "#/$defs/Channel"
+        },
+        "from_addr": {
+          "description": "Sender address or number.",
+          "type": "string"
+        },
+        "received_at_ms": {
+          "description": "When it arrived.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "subject": {
+          "description": "Email subject.",
+          "type": "string"
+        },
+        "body": {
+          "description": "Text of the message.",
+          "type": "string"
+        },
+        "attachments": {
+          "description": "Files attached.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          }
+        },
+        "external_id": {
+          "description": "Provider's message id; repeats are ignored.",
+          "type": "string"
+        },
+        "status": {
+          "description": "What happened to it.",
+          "$ref": "#/$defs/InboundStatus"
+        },
+        "chase_id": {
+          "description": "The chase it belongs to.",
+          "type": "string",
+          "x-ref": "Chase",
+          "x-ref-optional": true
+        },
+        "classification": {
+          "description": "What the reply said, as labelled.",
+          "type": "string"
+        },
+        "hold_reason": {
+          "description": "Why it was held for a person.",
+          "type": "string"
+        },
+        "trusted": {
+          "description": "Came through a signed upload link.",
+          "type": "boolean"
+        }
+      },
+      "description": "A message or upload from a carrier.",
+      "x-group": "Exchange"
+    },
+    "InboundStatus": {
+      "title": "InboundStatus",
+      "enum": [
+        "NEW",
+        "PROCESSED",
+        "HELD",
+        "UNMATCHED"
+      ]
+    },
+    "Load": {
+      "type": "object",
+      "title": "Load",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "carrier_id",
+        "load_number",
+        "delivery_appt_ms",
+        "bol_number",
+        "po_number",
+        "expected_pages",
+        "delivered_at_ms",
+        "contact_ids",
+        "customer_party_id",
+        "consignee_party_id",
+        "pickup_number",
+        "rate_cents",
+        "ready_to_invoice_at_ms"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "carrier_id": {
+          "description": "The carrier hauling it.",
+          "type": "string",
+          "x-ref": "Carrier"
+        },
+        "load_number": {
+          "description": "The broker's load number; the only load detail carriers see.",
+          "type": "string"
+        },
+        "delivery_appt_ms": {
+          "description": "Delivery appointment.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "bol_number": {
+          "description": "Bill of lading number.",
+          "type": "string"
+        },
+        "po_number": {
+          "description": "Purchase order number.",
+          "type": "string"
+        },
+        "expected_pages": {
+          "description": "Pages a complete POD has.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivered_at_ms": {
+          "description": "When the TMS marked it delivered.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contact_ids": {
+          "description": "Carrier contacts for this load; empty means all verified contacts.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-ref": "Contact"
+        },
+        "customer_party_id": {
+          "description": "Who the broker bills.",
+          "type": "string",
+          "x-ref": "Party",
+          "x-ref-optional": true
+        },
+        "consignee_party_id": {
+          "description": "Who receives the freight.",
+          "type": "string",
+          "x-ref": "Party",
+          "x-ref-optional": true
+        },
+        "pickup_number": {
+          "description": "Pickup reference.",
+          "type": "string",
+          "x-sensitive": true
+        },
+        "rate_cents": {
+          "description": "What the broker pays the carrier, in cents.",
+          "type": "integer",
+          "minimum": 0,
+          "x-sensitive": true
+        },
+        "ready_to_invoice_at_ms": {
+          "description": "When a checked POD was filed and the load became billable.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "One shipment the broker arranged.",
+      "x-group": "Freight"
+    },
+    "Operator": {
+      "type": "object",
+      "title": "Operator",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "name",
+        "role",
+        "email",
+        "active"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker they work for; empty for a platform operator.",
+          "type": "string",
+          "x-ref": "Broker",
+          "x-ref-optional": true
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "What they may do.",
+          "$ref": "#/$defs/OperatorRole"
+        },
+        "email": {
+          "description": "Sign-in address.",
+          "type": "string"
+        },
+        "active": {
+          "description": "Inactive operators cannot act.",
+          "type": "boolean"
+        }
+      },
+      "description": "A person who acts in Talon Chase: acknowledges, approves, switches off.",
+      "x-group": "Who"
+    },
+    "OperatorRole": {
+      "title": "OperatorRole",
+      "enum": [
+        "OWNER",
+        "STAFF",
+        "PLATFORM"
+      ],
+      "description": "What a person at the broker, or at TalonSight, may do."
+    },
+    "OutboxMessage": {
+      "type": "object",
+      "title": "OutboxMessage",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "load_id",
+        "chase_id",
+        "purpose",
+        "channel",
+        "idempotency_key",
+        "from_addr",
+        "to",
+        "created_at_ms",
+        "next_attempt_at_ms",
+        "cc",
+        "subject",
+        "body",
+        "attachments",
+        "quiet_tz",
+        "status",
+        "tries",
+        "claim_token",
+        "lease_until_ms",
+        "last_error",
+        "provider_id",
+        "sent_at_ms",
+        "finished_at_ms",
+        "deferred_noted"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker sending it.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "load_id": {
+          "description": "The load it is about.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "chase_id": {
+          "description": "The chase it serves.",
+          "type": "string",
+          "x-ref": "Chase"
+        },
+        "purpose": {
+          "description": "A request to a carrier, or a packet to the broker.",
+          "$ref": "#/$defs/OutboxPurpose"
+        },
+        "channel": {
+          "description": "Email or text.",
+          "$ref": "#/$defs/Channel"
+        },
+        "idempotency_key": {
+          "description": "Unique; the same on every try.",
+          "type": "string"
+        },
+        "from_addr": {
+          "description": "Sender address or number.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Recipients.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "created_at_ms": {
+          "description": "When it was queued.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_attempt_at_ms": {
+          "description": "When it may next be tried.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "cc": {
+          "description": "Copied recipients.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "subject": {
+          "description": "Email subject.",
+          "type": "string"
+        },
+        "body": {
+          "description": "Message text.",
+          "type": "string"
+        },
+        "attachments": {
+          "description": "Files attached.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          }
+        },
+        "quiet_tz": {
+          "description": "Carrier time zone for quiet hours; empty for the broker's own inbox.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Delivery state.",
+          "$ref": "#/$defs/OutboxStatus"
+        },
+        "tries": {
+          "description": "Provider calls made.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "claim_token": {
+          "description": "Which dispatcher holds it while SENDING.",
+          "type": "string"
+        },
+        "lease_until_ms": {
+          "description": "When that hold expires.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_error": {
+          "description": "The last provider error.",
+          "type": "string"
+        },
+        "provider_id": {
+          "description": "The provider's id for the delivered message.",
+          "type": "string"
+        },
+        "sent_at_ms": {
+          "description": "When the provider accepted it.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_at_ms": {
+          "description": "When it reached SENT, FAILED or CANCELLED.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deferred_noted": {
+          "description": "A quiet-hours deferral was already recorded.",
+          "type": "boolean"
+        }
+      },
+      "description": "One email or text to deliver. Written in the same transaction as the decision to send it; delivered afterwards by the dispatcher, at least once.",
+      "x-group": "Exchange"
+    },
+    "OutboxPurpose": {
+      "title": "OutboxPurpose",
+      "enum": [
+        "CARRIER_REQUEST",
+        "PACKET"
+      ]
+    },
+    "OutboxStatus": {
+      "title": "OutboxStatus",
+      "enum": [
+        "PENDING",
+        "SENDING",
+        "SENT",
+        "FAILED",
+        "CANCELLED"
+      ]
+    },
+    "Party": {
+      "type": "object",
+      "title": "Party",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "role",
+        "name",
+        "address"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker whose record this is.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "role": {
+          "description": "Customer, shipper or consignee.",
+          "$ref": "#/$defs/PartyRole"
+        },
+        "name": {
+          "description": "Business name.",
+          "type": "string",
+          "x-sensitive": true
+        },
+        "address": {
+          "description": "Street address.",
+          "type": "string",
+          "x-sensitive": true
+        }
+      },
+      "description": "A customer, shipper or consignee. Names and addresses never go to carriers.",
+      "x-group": "Freight"
+    },
+    "PartyRole": {
+      "title": "PartyRole",
+      "enum": [
+        "CUSTOMER",
+        "SHIPPER",
+        "CONSIGNEE"
+      ],
+      "description": "A business on a load other than the broker and the carrier."
+    },
+    "Plan": {
+      "type": "object",
+      "title": "Plan",
+      "additionalProperties": false,
+      "required": [
+        "first_ms",
+        "sms_ms",
+        "second_ms",
+        "third_ms",
+        "escalate_ms"
+      ],
+      "properties": {
+        "first_ms": {
+          "description": "First email.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "sms_ms": {
+          "description": "Driver text; 0 means none is planned.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "second_ms": {
+          "description": "Second request.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "third_ms": {
+          "description": "Third request.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "escalate_ms": {
+          "description": "Hand to a person if nothing has arrived.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "When each request in a chase is due, fixed when the chase opens."
+    },
+    "Requirement": {
+      "type": "object",
+      "title": "Requirement",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "load_id",
+        "doc_type",
+        "status",
+        "met_by_document_id",
+        "closed_at_ms"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "load_id": {
+          "description": "The load.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "doc_type": {
+          "description": "Which document.",
+          "$ref": "#/$defs/DocType"
+        },
+        "status": {
+          "description": "Open, met, or resolved by a person.",
+          "$ref": "#/$defs/RequirementStatus"
+        },
+        "met_by_document_id": {
+          "description": "The filed document that met it.",
+          "type": "string",
+          "x-ref": "Document",
+          "x-ref-optional": true
+        },
+        "closed_at_ms": {
+          "description": "When it stopped being open.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "A document a load needs before it can be billed.",
+      "x-group": "Need"
+    },
+    "RequirementStatus": {
+      "title": "RequirementStatus",
+      "enum": [
+        "OPEN",
+        "MET",
+        "RESOLVED_BY_PERSON"
+      ],
+      "description": "Whether a load still needs a document."
+    },
+    "Role": {
+      "title": "Role",
+      "enum": [
+        "DISPATCHER",
+        "DRIVER"
+      ],
+      "description": "A carrier contact's job."
+    },
+    "Step": {
+      "title": "Step",
+      "enum": [
+        "FIRST_EMAIL",
+        "DRIVER_SMS",
+        "SECOND",
+        "THIRD",
+        "ESCALATE",
+        "REASK",
+        "WRITEBACK",
+        "NONE"
+      ],
+      "description": "The next thing a chase will do."
+    },
+    "WriteBack": {
+      "type": "object",
+      "title": "WriteBack",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "chase_id",
+        "document_id",
+        "adapter",
+        "idempotency_key",
+        "status",
+        "attempts",
+        "receipt",
+        "detail",
+        "completed_at_ms"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "chase_id": {
+          "description": "The chase.",
+          "type": "string",
+          "x-ref": "Chase"
+        },
+        "document_id": {
+          "description": "The document being filed.",
+          "type": "string",
+          "x-ref": "Document"
+        },
+        "adapter": {
+          "description": "Which rung of the filing ladder.",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "description": "SHA-256 over (adapter, document hash, load).",
+          "type": "string"
+        },
+        "status": {
+          "description": "Pending, succeeded or failed.",
+          "$ref": "#/$defs/WriteBackStatus"
+        },
+        "attempts": {
+          "description": "Adapter calls that returned an answer.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "receipt": {
+          "description": "The adapter's receipt.",
+          "type": "string"
+        },
+        "detail": {
+          "description": "Last error, or the pending reference.",
+          "type": "string"
+        },
+        "completed_at_ms": {
+          "description": "When it succeeded.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "One attempt to file a checked document in the broker's system.",
+      "x-group": "Outcome"
+    },
+    "WriteBackStatus": {
+      "title": "WriteBackStatus",
+      "enum": [
+        "PENDING",
+        "SUCCEEDED",
+        "FAILED"
+      ]
+    },
+    "payload.attempt.queued": {
+      "type": "object",
+      "title": "attempt.queued payload",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "outbox_id",
+        "step",
+        "channel",
+        "to",
+        "cc",
+        "subject",
+        "body_sha256"
+      ],
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        },
+        "outbox_id": {
+          "type": "string"
+        },
+        "step": {
+          "$ref": "#/$defs/Step"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cc": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "subject": {
+          "type": "string"
+        },
+        "body_sha256": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.chase.closed": {
+      "type": "object",
+      "title": "chase.closed payload",
+      "additionalProperties": false,
+      "required": [
+        "chase_id",
+        "reason"
+      ],
+      "properties": {
+        "chase_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.chase.opened": {
+      "type": "object",
+      "title": "chase.opened payload",
+      "additionalProperties": false,
+      "required": [
+        "chase_id",
+        "trigger",
+        "plan"
+      ],
+      "properties": {
+        "chase_id": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "payload.chase.rescheduled": {
+      "type": "object",
+      "title": "chase.rescheduled payload",
+      "additionalProperties": false,
+      "required": [
+        "next_step",
+        "at_ms"
+      ],
+      "properties": {
+        "next_step": {
+          "$ref": "#/$defs/Step"
+        },
+        "at_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.chase.state": {
+      "type": "object",
+      "title": "chase.state payload",
+      "additionalProperties": false,
+      "required": [
+        "chase_id",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "chase_id": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/ChaseState"
+        },
+        "to": {
+          "$ref": "#/$defs/ChaseState"
+        }
+      }
+    },
+    "payload.check.completed": {
+      "type": "object",
+      "title": "check.completed payload",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "document_id",
+        "result",
+        "reasons",
+        "reroute_load_id"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string"
+        },
+        "document_id": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reroute_load_id": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.consent.recorded": {
+      "type": "object",
+      "title": "consent.recorded payload",
+      "additionalProperties": false,
+      "required": [
+        "consent_id",
+        "contact_id",
+        "status",
+        "source",
+        "by",
+        "inbound_id"
+      ],
+      "properties": {
+        "consent_id": {
+          "type": "string"
+        },
+        "contact_id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ConsentStatus"
+        },
+        "source": {
+          "$ref": "#/$defs/ConsentSource"
+        },
+        "by": {
+          "type": "string"
+        },
+        "inbound_id": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.contact.approved": {
+      "type": "object",
+      "title": "contact.approved payload",
+      "additionalProperties": false,
+      "required": [
+        "contact_id",
+        "carrier_id",
+        "by"
+      ],
+      "properties": {
+        "contact_id": {
+          "type": "string"
+        },
+        "carrier_id": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.document.received": {
+      "type": "object",
+      "title": "document.received payload",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "sha256",
+        "filename",
+        "doc_type",
+        "rerouted_from_load"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "doc_type": {
+          "$ref": "#/$defs/DocType"
+        },
+        "rerouted_from_load": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.document.rerouted": {
+      "type": "object",
+      "title": "document.rerouted payload",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "sha256",
+        "to_load"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "to_load": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.escalation.acknowledged": {
+      "type": "object",
+      "title": "escalation.acknowledged payload",
+      "additionalProperties": false,
+      "required": [
+        "escalation_id",
+        "by",
+        "resolution",
+        "note"
+      ],
+      "properties": {
+        "escalation_id": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "resolution": {
+          "$ref": "#/$defs/EscalationResolution"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.escalation.opened": {
+      "type": "object",
+      "title": "escalation.opened payload",
+      "additionalProperties": false,
+      "required": [
+        "escalation_id",
+        "reason",
+        "detail"
+      ],
+      "properties": {
+        "escalation_id": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/EscalationReason"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.inbound.classified": {
+      "type": "object",
+      "title": "inbound.classified payload",
+      "additionalProperties": false,
+      "required": [
+        "inbound_id",
+        "label",
+        "confidence"
+      ],
+      "properties": {
+        "inbound_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.inbound.held": {
+      "type": "object",
+      "title": "inbound.held payload",
+      "additionalProperties": false,
+      "required": [
+        "inbound_id",
+        "reason",
+        "detail"
+      ],
+      "properties": {
+        "inbound_id": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/EscalationReason"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.inbound.late": {
+      "type": "object",
+      "title": "inbound.late payload",
+      "additionalProperties": false,
+      "required": [
+        "inbound_id",
+        "chase_state"
+      ],
+      "properties": {
+        "inbound_id": {
+          "type": "string"
+        },
+        "chase_state": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.inbound.received": {
+      "type": "object",
+      "title": "inbound.received payload",
+      "additionalProperties": false,
+      "required": [
+        "inbound_id",
+        "channel",
+        "from",
+        "subject",
+        "body_sha256",
+        "attachments"
+      ],
+      "properties": {
+        "inbound_id": {
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "from": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "body_sha256": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "payload.inbound.unmatched": {
+      "type": "object",
+      "title": "inbound.unmatched payload",
+      "additionalProperties": false,
+      "required": [
+        "inbound_id",
+        "from",
+        "channel"
+      ],
+      "properties": {
+        "inbound_id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        }
+      }
+    },
+    "payload.load.delivered": {
+      "type": "object",
+      "title": "load.delivered payload",
+      "additionalProperties": false,
+      "required": [
+        "delivered_at_ms"
+      ],
+      "properties": {
+        "delivered_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.load.ready_to_invoice": {
+      "type": "object",
+      "title": "load.ready_to_invoice payload",
+      "additionalProperties": false,
+      "required": [
+        "at_ms"
+      ],
+      "properties": {
+        "at_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.load.received": {
+      "type": "object",
+      "title": "load.received payload",
+      "additionalProperties": false,
+      "required": [
+        "load_number",
+        "carrier_id",
+        "delivery_appt_ms",
+        "delivered_at_ms"
+      ],
+      "properties": {
+        "load_number": {
+          "type": "string"
+        },
+        "carrier_id": {
+          "type": "string"
+        },
+        "delivery_appt_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivered_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "payload.message.cancelled": {
+      "type": "object",
+      "title": "message.cancelled payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "reason"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.message.deferred": {
+      "type": "object",
+      "title": "message.deferred payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "reason",
+        "until_ms"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "until_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.message.duplicate": {
+      "type": "object",
+      "title": "message.duplicate payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "provider_id"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "provider_id": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.message.failed": {
+      "type": "object",
+      "title": "message.failed payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "tries",
+        "permanent",
+        "error"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "tries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "permanent": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.message.reclaimed": {
+      "type": "object",
+      "title": "message.reclaimed payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "after_try"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "after_try": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.message.retry": {
+      "type": "object",
+      "title": "message.retry payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "try",
+        "error",
+        "next_attempt_at_ms"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "try": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string"
+        },
+        "next_attempt_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.message.sent": {
+      "type": "object",
+      "title": "message.sent payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "channel",
+        "to",
+        "provider_id",
+        "try"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/Channel"
+        },
+        "to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "provider_id": {
+          "type": "string"
+        },
+        "try": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "payload.outbound.blocked": {
+      "type": "object",
+      "title": "outbound.blocked payload",
+      "additionalProperties": false,
+      "required": [
+        "step"
+      ],
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/Step"
+        }
+      }
+    },
+    "payload.outbound.refused": {
+      "type": "object",
+      "title": "outbound.refused payload",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.outbound.switch": {
+      "type": "object",
+      "title": "outbound.switch payload",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "by"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "by": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.requirement.closed": {
+      "type": "object",
+      "title": "requirement.closed payload",
+      "additionalProperties": false,
+      "required": [
+        "requirement_id",
+        "status",
+        "document_id"
+      ],
+      "properties": {
+        "requirement_id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RequirementStatus"
+        },
+        "document_id": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.sms.skipped": {
+      "type": "object",
+      "title": "sms.skipped payload",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "reason"
+      ],
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/Step"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.sms.stopped": {
+      "type": "object",
+      "title": "sms.stopped payload",
+      "additionalProperties": false,
+      "required": [
+        "contact_id",
+        "inbound_id"
+      ],
+      "properties": {
+        "contact_id": {
+          "type": "string"
+        },
+        "inbound_id": {
+          "type": "string"
+        }
+      },
+      "deprecated": true
+    },
+    "payload.writeback.failed": {
+      "type": "object",
+      "title": "writeback.failed payload",
+      "additionalProperties": false,
+      "required": [
+        "writeback_id",
+        "adapter",
+        "attempt",
+        "transient",
+        "error"
+      ],
+      "properties": {
+        "writeback_id": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transient": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.writeback.fallback": {
+      "type": "object",
+      "title": "writeback.fallback payload",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "writeback_id"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "writeback_id": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.writeback.pending": {
+      "type": "object",
+      "title": "writeback.pending payload",
+      "additionalProperties": false,
+      "required": [
+        "writeback_id",
+        "adapter",
+        "reference"
+      ],
+      "properties": {
+        "writeback_id": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "reference": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.writeback.succeeded": {
+      "type": "object",
+      "title": "writeback.succeeded payload",
+      "additionalProperties": false,
+      "required": [
+        "writeback_id",
+        "adapter",
+        "receipt",
+        "idempotency_key",
+        "document_sha256"
+      ],
+      "properties": {
+        "writeback_id": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        },
+        "receipt": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "document_sha256": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -90,14 +90,14 @@ def test_corrected_upload_in_quiet_hours_is_accepted():
 def test_corrected_email_reply_while_outbound_is_off_is_accepted(world: World):
     load = world.make_load()
     world.tick()
-    world.engine.set_global_outbound(False, by="jermaine")
+    world.engine.set_global_outbound(False, by="op-platform")
     world.send_pod(load, signature_present=False)
     assert world.chase(load).state is ChaseState.FAILED_CHECK
 
     world.clock.advance(HOUR_MS)
     world.send_pod(load)
     assert world.chase(load).state is ChaseState.PASSED  # filing waits for the switch
-    world.engine.set_global_outbound(True, by="jermaine")
+    world.engine.set_global_outbound(True, by="op-platform")
     world.tick()
     assert world.chase(load).state is ChaseState.CLOSED
     reasks = [m for m in world.messages(load) if m.subject.startswith("Please resend")]
@@ -154,8 +154,7 @@ def test_text_is_not_sent_once_consent_is_withdrawn_in_a_contact_sync(world: Wor
     world.tick()
     world.clock.advance(3 * HOUR_MS)
     world.engine.tick()
-    world.driver.sms_consent = False
-    world.store.put(world.driver)
+    world.set_sms_consent(world.driver, False)
     world.settle()
     assert world.sms.sent == []
     texts = [m for m in world.messages(load) if m.channel is Channel.SMS]
@@ -204,7 +203,9 @@ def test_a_long_batch_does_not_let_leases_expire_before_sending():
 def test_kill_switch_stops_the_rest_of_a_batch_already_running():
     world, loads = queued_world(3)
     world.engine.email = SlowEmail(
-        world, hook_on_call=1, hook=lambda: world.engine.set_global_outbound(False, by="ops")
+        world,
+        hook_on_call=1,
+        hook=lambda: world.engine.set_global_outbound(False, by="op-platform"),
     )
     world.outbox.dispatch()
     assert world.engine.email.calls == 1

@@ -21,6 +21,7 @@ import sqlalchemy as sa
 
 from chase.domain.models import ENTITY_TYPES
 from chase.evidence.chain import EvidenceEvent
+from chase.ontology.schema import validate_entity, validate_event
 
 T = TypeVar("T")
 ADVISORY_KEY = 7_423_001
@@ -180,6 +181,7 @@ class SqlStore:
     # -- entities --------------------------------------------------------------
 
     def put(self, obj: Any) -> None:
+        validate_entity(obj)
         table = TABLES[type(obj)]
         row = {f.name: _to_plain(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
         with self._conn() as conn:
@@ -240,6 +242,7 @@ class SqlStore:
         )
 
     def append_evidence(self, event: EvidenceEvent) -> None:
+        validate_event(event)
         table = METADATA.tables["evidence_event"]
         row = event.to_dict()
         row["payload"] = json.dumps(

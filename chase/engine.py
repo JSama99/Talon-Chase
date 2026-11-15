@@ -1472,7 +1472,9 @@ class ChaseEngine:
         if message is None or load is None or message.purpose is not OutboxPurpose.CARRIER_REQUEST:
             return
         chase = self._need(Chase, message.chase_id)
-        if chase.state in ACTIVE_STATES and not self._dispatcher_emails(load):
+        # Only a chase still waiting on the carrier needs this. Once a reply is in, a bounced
+        # request changes nothing about filing it.
+        if chase.state is ChaseState.ASKED and not self._dispatcher_emails(load):
             self._escalate(
                 chase, EscalationReason.SEND_FAILED, f"email to {email} bounced: {detail}"
             )

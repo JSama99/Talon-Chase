@@ -43,6 +43,7 @@ from chase.domain.models import (
     Role,
     WriteBack,
 )
+from chase.domain.risk import normalize_email
 from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
 from chase.evidence import canonical_json, sha256_hex
@@ -312,7 +313,19 @@ def create_app(
 
         def save():
             need(Carrier, body.carrier_id)
-            contact = Contact(**body.model_dump(exclude={"sms_consent"}), verified=True)
+            before = store.get(Contact, body.id)
+            # An address that bounced for good stays suppressed through every sync of
+            # the same address; a new address starts clean.
+            same = (
+                before is not None
+                and bool(body.email.strip())
+                and normalize_email(before.email) == normalize_email(body.email)
+            )
+            contact = Contact(
+                **body.model_dump(exclude={"sms_consent"}),
+                verified=True,
+                email_undeliverable_at_ms=before.email_undeliverable_at_ms if same else None,
+            )
             store.put(contact)
             # The broker's system reports consent; a change becomes a consent record.
             # A STOP reply is never undone by a sync: that needs an operator.

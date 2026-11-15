@@ -21,7 +21,7 @@ Code: `chase/channels/resend.py` (sending, fetching received mail, signatures) a
 | Fetching the reply fails | The webhook answers 502 and Resend sends it again. Nothing is half-stored. |
 | Same reply delivered twice | Stored once: the external id is `resend:<email id>` |
 | Reply for no broker | Kept as `inbound.unrouted` evidence on the `system` chain |
-| Hard bounce or spam complaint | The address is marked undeliverable at that carrier and never emailed again. If a POD request bounced and no other dispatcher address is left, the load goes to a person (`SEND_FAILED`). Settings lists the dead addresses. |
+| Hard bounce or spam complaint | The address is marked undeliverable at that carrier and never emailed again, including by requests already queued or retrying for other loads (see docs/OUTBOX.md). A contact sync of the same address keeps it suppressed; a new address starts clean. If the chase is still waiting on the carrier and no other dispatcher address is left, the load goes to a person (`SEND_FAILED`). Once a reply is in, a bounce does not interrupt filing. Settings lists the dead addresses. |
 | Temporary bounce | Recorded as evidence only |
 | Same event delivered twice | Recorded once, by the webhook message id |
 

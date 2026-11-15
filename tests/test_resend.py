@@ -843,3 +843,129 @@ def test_mailbox_hashes():
     assert mailbox_hashes(to) == ["brk-1", "b"]
     assert mailbox_hashes(to, "IN.x.example") == ["brk-1"]
     assert mailbox_hashes([]) == []
+
+
+# ------------------------------------------------- review findings: bounce suppression
+
+
+def put_contact(client, contact, **changes):
+    body = {
+        "id": contact.id,
+        "carrier_id": contact.carrier_id,
+        "role": contact.role.value,
+        "name": contact.name,
+        "email": contact.email,
+        "phone": contact.phone,
+        "sms_consent": False,
+    } | changes
+    return client.put(f"/v1/contacts/{contact.id}", json=body, headers={"x-api-key": KEY})
+
+
+def test_a_contact_sync_does_not_revive_a_bounced_address(service):
+    world, client = service
+    load = world.make_load()
+    world.tick()
+    deliver(client, world, bounce(world, load))
+    stamp = world.store.get(Contact, world.dispatcher.id).email_undeliverable_at_ms
+    assert stamp is not None
+    # The TMS syncs the same address again, written differently.
+    synced = put_contact(client, world.dispatcher, email=f"  {world.dispatcher.email.upper()} ")
+    assert synced.status_code == 200
+    assert world.store.get(Contact, world.dispatcher.id).email_undeliverable_at_ms == stamp
+    assert put_contact(client, world.dispatcher).status_code == 200
+    assert world.store.get(Contact, world.dispatcher.id).email_undeliverable_at_ms == stamp
+
+
+def test_a_new_address_for_the_contact_is_mailable_again(service):
+    world, client = service
+    load = world.make_load()
+    world.tick()
+    deliver(client, world, bounce(world, load))
+    put_contact(client, world.dispatcher, email="dana@redlinetrucking.example")
+    fresh = world.store.get(Contact, world.dispatcher.id)
+    assert fresh.email == "dana@redlinetrucking.example"
+    assert fresh.email_undeliverable_at_ms is None
+
+
+def queue_second_load(world):
+    """Load A has been asked and delivered; load B's request is queued but not yet sent."""
+    first = world.make_load()
+    world.tick()
+    second = world.make_load()
+    world.engine.tick()
+    (queued,) = [m for m in world.messages(second) if m.channel.value == "EMAIL"]
+    assert queued.status is OutboxStatus.PENDING and queued.to == [world.dispatcher.email]
+    return first, second
+
+
+def test_a_queued_request_for_another_load_skips_the_bounced_address(service):
+    world, client = service
+    world.store.put(
+        Contact("con-disp2", "car-1", Role.DISPATCHER, "Nights", "nights@redlinetrucking.example")
+    )
+    first = world.make_load()
+    world.tick()
+    second = world.make_load()
+    world.engine.tick()
+    (queued,) = [m for m in world.messages(second) if m.channel.value == "EMAIL"]
+    assert set(queued.to) == {world.dispatcher.email, "nights@redlinetrucking.example"}
+    deliver(client, world, bounce(world, first))
+    world.settle()
+    sent = world.store.get(OutboxMessage, queued.id)
+    assert sent.status is OutboxStatus.SENT
+    assert sent.to == ["nights@redlinetrucking.example"]
+    assert world.chase(second).state is ChaseState.ASKED
+    to_dead = [m for m in world.email.sent[1:] if world.dispatcher.email in m.to]
+    assert to_dead == [], "nothing may go to the bounced address after the bounce"
+
+
+def test_a_queued_request_with_no_address_left_goes_to_a_person_unsent(service):
+    world, client = service
+    first, second = queue_second_load(world)
+    sent_before = len(world.email.sent)
+    deliver(client, world, bounce(world, first))
+    world.settle()
+    (queued,) = [m for m in world.messages(second) if m.channel.value == "EMAIL"]
+    assert queued.status is OutboxStatus.CANCELLED
+    assert len(world.email.sent) == sent_before
+    assert world.chase(second).state is ChaseState.ESCALATED
+    (escalation,) = world.escalations(second)
+    assert escalation.reason is EscalationReason.SEND_FAILED
+    assert "bounced" in escalation.detail and world.dispatcher.email in escalation.detail
+    cancelled = [e for e in world.store.evidence(second.id) if e.kind == "message.cancelled"]
+    assert cancelled and "bounced" in cancelled[-1].payload["reason"]
+
+
+def test_a_retry_waiting_to_go_out_skips_a_bounced_address_too(service):
+    world, client = service
+    world.store.put(
+        Contact("con-disp2", "car-1", Role.DISPATCHER, "Nights", "nights@redlinetrucking.example")
+    )
+    first = world.make_load()
+    world.tick()
+    second = world.make_load()
+    world.email.fail_next = 1  # the provider is down for load B's first try
+    world.tick()
+    (retrying,) = [m for m in world.messages(second) if m.channel.value == "EMAIL"]
+    assert retrying.status is OutboxStatus.PENDING and retrying.tries == 1
+    deliver(client, world, bounce(world, first))
+    world.run(HOUR_MS)
+    done = world.store.get(OutboxMessage, retrying.id)
+    assert done.status is OutboxStatus.SENT and done.to == ["nights@redlinetrucking.example"]
+
+
+def test_a_bounce_after_the_pod_arrived_does_not_abandon_the_filing(service):
+    world, client = service
+    load = world.make_load()
+    world.tick()
+    world.tms.down = True  # the POD is valid, but filing keeps failing for now
+    world.send_pod(load)
+    assert world.chase(load).state is ChaseState.PASSED
+    deliver(client, world, bounce(world, load))
+    assert world.store.get(Contact, world.dispatcher.id).email_undeliverable_at_ms is not None
+    assert world.chase(load).state is ChaseState.PASSED, "no carrier reply is needed any more"
+    assert world.escalations(load) == []
+    world.tms.down = False
+    world.run(HOUR_MS)
+    assert world.chase(load).state is ChaseState.CLOSED
+    assert world.chase(load).closed_reason == "filed"

@@ -40,7 +40,8 @@ PENDING ──claim──> SENDING ──provider ok──> SENT
    ├──kill switch off──> stays PENDING, untouched
    ├──carrier quiet hours──> stays PENDING until 07:00 carrier time
    ├──chase no longer asking (document arrived, escalated)──> CANCELLED
-   └──text recipient sent STOP or lost consent──> CANCELLED
+   ├──text recipient sent STOP or lost consent──> CANCELLED
+   └──every email recipient has bounced for good──> CANCELLED, load to a person
 ```
 
 The checks in the bottom half run at claim time, and messages are claimed one at a
@@ -56,6 +57,10 @@ sending each message, not at the moment of deciding, and not at the start of a b
   Packets to the broker are never cancelled this way.
 - **Still allowed to text.** A queued text is cancelled if no verified contact with
   that number still has consent on file, for example after the driver replied STOP.
+- **Still deliverable.** A queued or retrying carrier email drops any address that
+  has since bounced for good or drawn a spam complaint (a bounce on another load's
+  request counts). The request records the same shorter list. If no recipient is
+  left, the message is cancelled and the load goes to a person (`SEND_FAILED`).
 
 The one gap left: a change that lands *during* a single provider call (the switch is
 turned off while one email is being handed over) cannot stop that one message.

@@ -114,6 +114,6 @@ shows the load number and nothing else about the load, by design.
 ## Before a broker uses these
 
 Sign-in is built (emailed one-time links, signed sessions, CSRF tokens, per-broker
-access), and sign-in emails go through Postmark once `POSTMARK_SERVER_TOKEN` is set
+access), and sign-in emails go through Resend once `RESEND_API_KEY` is set
 (see [EMAIL.md](EMAIL.md)). `python -m chase.app.link <operator-id>` still prints a
 link for the very first owner, or when email is down.

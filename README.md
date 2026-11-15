@@ -5,8 +5,8 @@ the carrier for the signed proof of delivery (POD), follows up on a schedule, ch
 the document, files it to the broker's system, and hands the load to a person when
 it is stuck or anything looks risky.
 
-**Status: version 1, not yet used by a broker.** Email is real through Postmark once
-a server token is set ([docs/EMAIL.md](docs/EMAIL.md)); without one, and for texts,
+**Status: version 1, not yet used by a broker.** Email is real through Resend once
+an API key is set ([docs/EMAIL.md](docs/EMAIL.md)); without one, and for texts,
 the language model and the TMS, everything sits behind interfaces with in-memory
 stand-ins. See [What is not built](#what-is-not-built).
 
@@ -96,7 +96,7 @@ chase/
   engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
   outbox.py    the outbox: enqueue, and the dispatcher that delivers, retries, gives up
   ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
-  channels/    Postmark email (send, inbound, bounces); in-memory email and text stand-ins
+  channels/    Resend email (send, inbound, bounces); in-memory email and text stand-ins
   reader/      rule-based reply classifier; stand-in document reader
   writeback/   FakeApiAdapter (TMS API stand-in), PacketEmailAdapter (works with any TMS)
   store/       MemoryStore, SqlStore (SQLite and Postgres)
@@ -148,7 +148,7 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 | `POST /v1/escalations/{id}/acknowledge` | An operator resolves an escalation: `HANDLED_BY_HAND`, `WAIVED`, `DISPUTED`, or `OTHER` with a note |
 | `POST /v1/contacts/approve` | An operator approves a new contact |
 | `POST /v1/contacts/{id}/consent` | An operator records a grant or withdrawal of text consent, with its source |
-| `POST /webhooks/postmark/inbound`, `/webhooks/postmark/events` | Postmark replies and bounces; HTTP Basic credentials, see [docs/EMAIL.md](docs/EMAIL.md) |
+| `POST /webhooks/resend` | Resend replies and bounces; Svix-signed, see [docs/EMAIL.md](docs/EMAIL.md) |
 | `POST /v1/outbound/switch` | Kill switch: global needs a `PLATFORM` operator; per broker, one of that broker's |
 
 Every `by` is an operator id. An unknown, inactive or other-broker operator gets 403.
@@ -210,7 +210,7 @@ real PODs. That needs labelled documents from a pilot broker.
 
 ## What is not built
 
-- **Real channels, except email.** Email goes through Postmark (see
+- **Real channels, except email.** Email goes through Resend (see
   [docs/EMAIL.md](docs/EMAIL.md)). There is still no text line, language model or TMS
   integration; each needs its own adapter behind the existing interface.
 - **Document storage.** Files are stored in the database by content hash. Move them to
@@ -223,6 +223,6 @@ real PODs. That needs labelled documents from a pilot broker.
 ## Next steps
 
 1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
-2. Set up Postmark for the first broker: [docs/EMAIL.md](docs/EMAIL.md).
+2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md).
 3. One at a time: text messages (Twilio), document reader with labelled PODs, first
    TMS adapter.

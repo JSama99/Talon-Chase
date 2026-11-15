@@ -1,47 +1,85 @@
 """Service entry point: uvicorn chase.api.main:app
 
-Version 1 runs with the in-memory channel fakes and the rule-based reader, so it
-records what it would send and never contacts anyone. Real adapters replace the
-fakes here once they exist.
+Version 1 runs with the in-memory text-message stand-in and the rule-based reader.
+Email is real once RESEND_API_KEY is set; without it, email goes to an in-memory
+stand-in that records what it would send and contacts no one.
 
 Environment:
   DATABASE_URL    SQLAlchemy URL (postgresql+psycopg://... or sqlite+pysqlite:///chase.db)
   CHASE_API_KEY   admin key, at least 16 characters
   CHASE_SECRET    signs upload links, at least 32 characters
   CHASE_BASE_URL  public address used in upload and sign-in links
-  CHASE_LOGIN_FROM  sender of sign-in emails (a Postmark-verified sender)
+  CHASE_LOGIN_FROM  sender of sign-in emails; its domain must be verified in Resend
 
-Email through Postmark (without POSTMARK_SERVER_TOKEN, email goes to the in-memory
-stand-in and nothing is sent):
-  POSTMARK_SERVER_TOKEN       server API token
-  POSTMARK_MESSAGE_STREAM     outbound stream id, default "outbound"
-  POSTMARK_WEBHOOK_USER       Basic credentials Postmark sends to the webhooks
-  POSTMARK_WEBHOOK_PASSWORD   (both required, at least 24 characters for the password)
+Email through Resend (see docs/EMAIL.md):
+  RESEND_API_KEY            API key (sending access is enough to send; receiving
+                            replies needs full access)
+  RESEND_WEBHOOK_SECRET     the webhook's signing secret, whsec_...
+  RESEND_VERIFIED_DOMAINS   comma-separated domains verified in Resend; mail from them
+                            is sent as written
+  RESEND_SHARED_FROM        address on a verified domain that brokers without their own
+                            verified domain send through, e.g. chase@mail.example.com
+  RESEND_INBOUND_DOMAIN     where Resend receives mail (required with RESEND_SHARED_FROM)
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 
 from chase.api.app import create_app
 from chase.channels.fakes import FakeEmail, FakeSms
-from chase.channels.postmark import PostmarkEmail
+from chase.channels.resend import (
+    Identity,
+    ResendClient,
+    ResendEmail,
+    ResendInbox,
+    identity_from_env,
+    secret_key,
+)
 from chase.domain.clock import SystemClock, UuidIds
+from chase.domain.models import Broker
 from chase.engine import ChaseEngine
+from chase.ports import EmailPort
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.sql import SqlStore
 from chase.writeback.adapters import FakeApiAdapter
 
 
-def _email(store: SqlStore):
-    token = os.environ.get("POSTMARK_SERVER_TOKEN", "")
-    if not token:
-        return FakeEmail()
-    return PostmarkEmail(
-        token,
-        store.get_blob,
-        message_stream=os.environ.get("POSTMARK_MESSAGE_STREAM", "outbound"),
-    )
+def _broker_of(store):
+    """The (id, name) of the broker whose chase mailbox is this address."""
+
+    def lookup(address: str) -> tuple[str, str] | None:
+        wanted = address.strip().lower()
+        for broker in sorted(store.find(Broker), key=lambda b: b.id):
+            if broker.chase_mailbox.strip().lower() == wanted:
+                return broker.id, broker.name
+        return None
+
+    return lookup
+
+
+def _resend(
+    store, env: Mapping[str, str] | None = None
+) -> tuple[EmailPort, ResendInbox | None, Identity | None]:
+    """The email port, the mail fetcher and the identity: real when RESEND_API_KEY is
+    set, else the in-memory stand-in. Raises RuntimeError for a half-set-up Resend."""
+    env = os.environ if env is None else env
+    api_key = env.get("RESEND_API_KEY", "")
+    if not api_key:
+        return FakeEmail(), None, None
+    try:
+        identity = identity_from_env(env)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if secret_key(env.get("RESEND_WEBHOOK_SECRET", "")) is None:
+        raise RuntimeError(
+            "RESEND_WEBHOOK_SECRET must be the webhook's signing secret (whsec_...); "
+            "without it replies and bounces cannot be received"
+        )
+    client = ResendClient(api_key)
+    email = ResendEmail(client, store.get_blob, identity, _broker_of(store))
+    return email, ResendInbox(client), identity
 
 
 def build_app():
@@ -51,11 +89,12 @@ def build_app():
     store = SqlStore(os.environ.get("DATABASE_URL", "sqlite+pysqlite:///chase.db"))
     if store.engine.dialect.name == "sqlite":
         store.create_schema()  # Postgres is set up by `alembic upgrade head`
+    email, inbox, identity = _resend(store)
     engine = ChaseEngine(
         store=store,
         clock=SystemClock(),
         ids=UuidIds(),
-        email=_email(store),
+        email=email,
         sms=FakeSms(),
         classifier=RuleBasedClassifier(),
         reader=StandInReader(),
@@ -63,15 +102,12 @@ def build_app():
         secret=secret.encode(),
         base_url=os.environ.get("CHASE_BASE_URL", "http://localhost:8000"),
     )
-    hook_user = os.environ.get("POSTMARK_WEBHOOK_USER", "")
-    hook_password = os.environ.get("POSTMARK_WEBHOOK_PASSWORD", "")
-    if hook_password and len(hook_password) < 24:
-        raise RuntimeError("POSTMARK_WEBHOOK_PASSWORD must be at least 24 characters")
     return create_app(
         engine,
         os.environ.get("CHASE_API_KEY", ""),
-        postmark_webhook_user=hook_user,
-        postmark_webhook_password=hook_password,
+        resend_webhook_secret=os.environ.get("RESEND_WEBHOOK_SECRET", "") if inbox else "",
+        resend_inbox=inbox,
+        resend_inbound_domain=identity.inbound_domain if identity else "",
         login_from=os.environ.get("CHASE_LOGIN_FROM", "Talon Chase <signin@talonchase.invalid>"),
     )
 

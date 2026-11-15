@@ -31,13 +31,10 @@ class EmailMessage:
     cc: list[str] = field(default_factory=list)
     attachments: list[OutgoingAttachment] = field(default_factory=list)
     # The same for every try of one message. Pass it to the provider as its
-    # idempotency key where the provider supports one.
+    # idempotency key, so a retry after a lost response cannot send twice.
     idempotency_key: str = ""
     # Stable Message-ID header, so a repeated delivery is recognisably the same email.
     message_id: str = ""
-    # False when an earlier try may already have reached the provider. A provider
-    # without idempotency keys should check before sending again.
-    first_try: bool = True
 
 
 @dataclass(frozen=True)

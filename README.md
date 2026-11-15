@@ -15,7 +15,7 @@ in-memory stand-ins. See [What is not built](#what-is-not-built).
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                          # 123 pass, 1 skipped without Postgres; 129 with it
+pytest                          # 156 pass, 3 skipped without Postgres; 164 with it
 python -m chase.demo            # five loads, end to end, with evidence exports
 python -m synthetic.evaluate    # 200 loads, 60 document fixtures, pass/fail report
 python tools/verify_evidence.py out/demo/evidence-TC-300002.json
@@ -71,7 +71,11 @@ Each has a test in `tests/test_acceptance.py`.
    retried without attaching twice. An adapter outage falls back to the emailed packet.
 8. **Texts need consent and stop on STOP**, permanently, including after a contact re-sync.
 9. **Kill switches**, global and per broker, stop every outbound message and write-back.
-10. **Every step is evidence.** Each send, reply, document, check, state change and
+   Messages already queued are held, not dropped.
+10. **Sending is separate from deciding.** The engine writes each message to an outbox
+    in the same transaction as its decision; a dispatcher delivers it afterwards, at
+    least once, with a stable idempotency key. See [docs/OUTBOX.md](docs/OUTBOX.md).
+11. **Every step is evidence.** Each send, reply, document, check, state change and
     write-back appends to a per-load hash chain. See [docs/EVIDENCE.md](docs/EVIDENCE.md).
 
 ## Layout
@@ -82,6 +86,7 @@ chase/
                outbound templates and guard, upload tokens (pure; no I/O)
   evidence/    canonical JSON, SHA-256 hash chain, verifier
   engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
+  outbox.py    the outbox: enqueue, and the dispatcher that delivers, retries, gives up
   ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
   channels/    in-memory email and text stand-ins
   reader/      rule-based reply classifier; stand-in document reader
@@ -90,9 +95,9 @@ chase/
   api/         FastAPI service
   demo.py      five-load walkthrough
 synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
-migrations/    Alembic; one initial migration
+migrations/    Alembic: 0001 initial schema, 0002 outbox
 tools/         verify_evidence.py, a standalone verifier with no project imports
-docs/          EVIDENCE.md, UI.md, VALIDATION.md
+docs/          EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -122,7 +127,8 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 | `PATCH /v1/brokers/{id}/config` | Change schedule and policy settings |
 | `POST /v1/loads` | Add or update a load; opens a chase once it is delivered |
 | `POST /v1/inbound` | A carrier's email or text, attachments as base64; safe to repeat with the same `external_id` |
-| `POST /v1/tick` | Do everything that is due; call it every few minutes from a scheduler |
+| `POST /v1/tick` | Do what is due, deliver queued messages, finish what that unblocks; call it every minute or two |
+| `POST /v1/dispatch` | Deliver queued messages only |
 | `GET /u/{token}`, `POST /u/{token}` | Carrier upload page and upload; no key, the token is the permission |
 | `GET /v1/brokers/{id}/queue` | What needs a person: open escalations and unmatched messages |
 | `GET /v1/brokers/{id}/summary`, `/chases` | Counts and the list of chases |
@@ -159,9 +165,6 @@ real PODs. That needs labelled documents from a pilot broker.
 
 - **Real channels.** No mailbox, text line, language model or TMS integration. Each
   needs its own adapter behind the existing interface.
-- **An outbox.** Messages are sent inside the database transaction. With a real
-  provider, a commit that fails after a send would cause a duplicate on retry. Add an
-  outbox table and a sender before connecting real email or text.
 - **User accounts.** There is one admin key. A broker-facing screen needs sign-in and
   per-broker access before anyone outside uses it.
 - **Document storage.** Files are stored in the database by content hash. Move them to
@@ -174,6 +177,6 @@ real PODs. That needs labelled documents from a pilot broker.
 ## Next steps
 
 1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
-2. Design the broker screens from [docs/UI.md](docs/UI.md).
-3. Then, one at a time: outbox, mailbox adapter, document reader with labelled PODs,
-   first TMS adapter.
+2. Build the broker screens from [docs/UI.md](docs/UI.md), with sign-in.
+3. Then, one at a time: mailbox adapter (passing the outbox's idempotency key to the
+   provider), document reader with labelled PODs, first TMS adapter.

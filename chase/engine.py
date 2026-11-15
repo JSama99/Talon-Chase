@@ -33,6 +33,7 @@ from chase.domain.models import (
     Inbound,
     InboundStatus,
     Load,
+    OutboxPurpose,
     Requirement,
     Role,
     Step,
@@ -50,14 +51,14 @@ from chase.domain.schedule import Plan, build_plan, next_allowed
 from chase.domain.states import ACCEPTS_DOCUMENTS, ACTIVE_STATES, can_transition, transition
 from chase.domain.tokens import make_upload_token, read_upload_token
 from chase.evidence import canonical_json, make_event, sha256_hex, verify_chain
+from chase.outbox import enqueue
 from chase.ports import (
     AdapterError,
+    AdapterPending,
     DocumentReader,
-    EmailMessage,
     EmailPort,
     ReplyClassifier,
     ReplyLabel,
-    SmsMessage,
     SmsPort,
     Store,
     TmsAdapter,
@@ -66,7 +67,7 @@ from chase.ports import (
 from chase.writeback.adapters import PacketEmailAdapter
 
 SEND_STEPS = frozenset({Step.FIRST_EMAIL, Step.DRIVER_SMS, Step.SECOND, Step.THIRD, Step.REASK})
-SEND_RETRY_MS = 15 * MINUTE_MS
+WRITEBACK_POLL_MS = 5 * MINUTE_MS  # fallback; the dispatcher wakes the chase sooner
 GLOBAL_SWITCH = "outbound_enabled"
 SYSTEM_CHAIN = "system"
 
@@ -95,7 +96,7 @@ class ChaseEngine:
         self.reader = reader
         self.secret = secret
         self.base_url = base_url.rstrip("/")
-        packet = PacketEmailAdapter(store, email)
+        packet = PacketEmailAdapter(store, clock, ids)
         self.adapters: dict[str, TmsAdapter] = {packet.name: packet}
         for adapter in adapters or []:
             self.adapters[adapter.name] = adapter
@@ -362,6 +363,7 @@ class ChaseEngine:
         cc: list[str],
         reasons: list[str] | None = None,
     ) -> bool:
+        """Queue one request email. It is delivered by the outbox dispatcher."""
         if not to:
             self._escalate(chase, EscalationReason.NO_CONTACT, "no verified dispatcher email")
             return False
@@ -370,15 +372,9 @@ class ChaseEngine:
         body = outbound.email_body(broker, load, step, link, reasons or [])
         if not self._guard(chase, load, f"{subject}\n{body}", link):
             return False
-        message = EmailMessage(broker.chase_mailbox, to, subject, body, cc)
-        try:
-            provider_id = self.email.send(message)
-        except Exception as exc:  # the provider is down; try again shortly
-            self._record(load.id, "send.failed", {"step": step, "error": str(exc)})
-            chase.next_action_at_ms = self.clock.now_ms() + SEND_RETRY_MS
-            self.store.put(chase)
-            return False
-        self._log_attempt(chase, load, step, Channel.EMAIL, to, cc, subject, body, provider_id)
+        self._queue_request(
+            chase, load, broker, step, Channel.EMAIL, broker.chase_mailbox, to, cc, subject, body
+        )
         return True
 
     def _send_texts(
@@ -394,14 +390,10 @@ class ChaseEngine:
         if not self._guard(chase, load, body, link, escalate=False):
             return
         for contact in eligible:
-            try:
-                provider_id = self.sms.send(SmsMessage(broker.sms_number, contact.phone, body))
-            except Exception as exc:
-                self._record(load.id, "send.failed", {"step": step, "error": str(exc)})
-                continue
-            self._log_attempt(
-                chase, load, step, Channel.SMS, [contact.phone], [], "", body, provider_id
-            )
+            self._queue_request(
+                chase, load, broker, step, Channel.SMS, broker.sms_number, [contact.phone], [], "",
+                body,
+            )  # fmt: skip
 
     def _guard(self, chase: Chase, load: Load, text: str, link: str, escalate: bool = True) -> bool:
         # The link is a signed token and the load number is what the message is about;
@@ -416,36 +408,57 @@ class ChaseEngine:
             return False
         return True
 
-    def _log_attempt(
+    def _queue_request(
         self,
         chase: Chase,
         load: Load,
+        broker: Broker,
         step: Step,
         channel: Channel,
+        from_addr: str,
         to: list[str],
         cc: list[str],
         subject: str,
         body: str,
-        provider_id: str,
     ) -> None:
+        """Record the attempt and its outbox message together, in the caller's transaction."""
+        now = self.clock.now_ms()
+        carrier: Carrier = self._need(Carrier, load.carrier_id)
+        attempt_id = self.ids.new("att")
+        message = enqueue(
+            self.store,
+            message_id=self.ids.new("msg"),
+            now_ms=now,
+            broker_id=broker.id,
+            load_id=load.id,
+            chase_id=chase.id,
+            purpose=OutboxPurpose.CARRIER_REQUEST,
+            channel=channel,
+            idempotency_key=f"attempt:{attempt_id}",
+            from_addr=from_addr,
+            to=to,
+            cc=cc,
+            subject=subject,
+            body=body,
+            quiet_tz=carrier.timezone,
+        )
         attempt = Attempt(
-            id=self.ids.new("att"),
+            id=attempt_id,
             chase_id=chase.id,
             step=step,
             channel=channel,
             to=to,
             cc=cc,
-            subject=subject,
-            body=body,
-            sent_at_ms=self.clock.now_ms(),
-            provider_id=provider_id,
+            queued_at_ms=now,
+            outbox_id=message.id,
         )
         self.store.put(attempt)
         self._record(
             load.id,
-            "attempt.sent",
+            "attempt.queued",
             {
                 "attempt_id": attempt.id,
+                "outbox_id": message.id,
                 "step": step,
                 "channel": channel,
                 "to": to,
@@ -646,7 +659,7 @@ class ChaseEngine:
             by_id = {c.id: c for c in chases}
             texted = [a for a in texted if a.chase_id in by_id]
             if texted:
-                latest = max(texted, key=lambda a: (a.sent_at_ms, a.id))
+                latest = max(texted, key=lambda a: (a.queued_at_ms, a.id))
                 return by_id[latest.chase_id]
             return None
 
@@ -764,9 +777,14 @@ class ChaseEngine:
             self._log_check(chase, document, outcome)
             results.append((document, extraction, outcome))
         self._apply(chase, [(d, o) for d, _, o in results], cfg)
+        # Documents that belong to another load are judged together per target load, so
+        # a damage note on one of them is never outvoted by a clean copy in the same reply.
+        by_target: dict[str, list[tuple[Document, Extraction]]] = {}
         for document, extraction, outcome in results:
             if outcome.result is CheckResult.REROUTE:
-                self._reroute(load, outcome.reroute_load_id, document, extraction, inbound, sender)
+                by_target.setdefault(outcome.reroute_load_id, []).append((document, extraction))
+        for target_id, documents in by_target.items():
+            self._reroute(load, target_id, documents, inbound, sender)
 
     def _log_check(self, chase: Chase, document: Document, outcome: CheckOutcome) -> None:
         check = Check(
@@ -840,20 +858,46 @@ class ChaseEngine:
         self,
         source: Load,
         target_load_id: str,
-        document: Document,
-        extraction: Extraction,
+        documents: list[tuple[Document, Extraction]],
         inbound: Inbound,
         sender: Contact | None,
     ) -> None:
-        """A document sent for one load that belongs to another open load of the same carrier."""
+        """Documents sent for one load that belong to another open load of the same carrier.
+        All of them are checked first; the target's next state follows from all results."""
         target = self._need(Load, target_load_id)
         chases = self.store.find(Chase, load_id=target.id)
-        self._record(
-            source.id,
-            "document.rerouted",
-            {"document_id": document.id, "sha256": document.content_sha256, "to_load": target.id},
-        )
+        for document, _ in documents:
+            self._record(
+                source.id,
+                "document.rerouted",
+                {
+                    "document_id": document.id,
+                    "sha256": document.content_sha256,
+                    "to_load": target.id,
+                },
+            )
+        copies = [
+            (
+                self._store_document(
+                    target,
+                    inbound,
+                    Attachment(document.filename, document.content_sha256),
+                    {"rerouted_from_load": source.id},
+                )[0],
+                extraction,
+            )
+            for document, extraction in documents
+        ]
         if not chases or chases[0].state not in ACCEPTS_DOCUMENTS:
+            # Kept on the target load for a person to see; its chase is not reopened.
+            self._record(
+                target.id,
+                "inbound.late",
+                {
+                    "inbound_id": inbound.id,
+                    "chase_state": chases[0].state if chases else "NONE",
+                },
+            )
             return
         chase = chases[0]
         broker = self._need(Broker, chase.broker_id)
@@ -861,15 +905,12 @@ class ChaseEngine:
             chase.reply_to_contact_id = sender.id
         self._move(chase, ChaseState.RECEIVED)
         self._move(chase, ChaseState.CHECKING)
-        copy, _ = self._store_document(
-            target,
-            inbound,
-            Attachment(document.filename, document.content_sha256),
-            {"rerouted_from_load": source.id},
-        )
-        outcome = check_document(extraction, target, [], broker.config)
-        self._log_check(chase, copy, outcome)
-        self._apply(chase, [(copy, outcome)], broker.config)
+        outcomes = []
+        for copy, extraction in copies:
+            outcome = check_document(extraction, target, [], broker.config)
+            self._log_check(chase, copy, outcome)
+            outcomes.append((copy, outcome))
+        self._apply(chase, outcomes, broker.config)
         self._drain(chase.id)
 
     # ---------------------------------------------------------------- write-back
@@ -903,15 +944,33 @@ class ChaseEngine:
             idempotency_key=writeback.idempotency_key,
             broker_id=broker.id,
             load_id=load.id,
+            chase_id=chase.id,
             load_number=load.load_number,
             document_sha256=document.content_sha256,
             filename=document.filename,
             delivered_at_ms=delivered,
         )
-        writeback.attempts += 1
         try:
             receipt = self.adapters[writeback.adapter].file(request)
+        except AdapterPending as pending:
+            marker = f"pending:{pending.reference}"
+            if writeback.detail != marker:
+                writeback.detail = marker
+                self.store.put(writeback)
+                self._record(
+                    load.id,
+                    "writeback.pending",
+                    {
+                        "writeback_id": writeback.id,
+                        "adapter": writeback.adapter,
+                        "reference": pending.reference,
+                    },
+                )
+            chase.next_action_at_ms = now + WRITEBACK_POLL_MS
+            self.store.put(chase)
+            return False
         except AdapterError as exc:
+            writeback.attempts += 1
             backoff = broker.config.writeback_retry_backoff_ms
             self._record(
                 load.id,
@@ -948,8 +1007,10 @@ class ChaseEngine:
             )
             return False
 
+        writeback.attempts += 1
         writeback.status = WriteBackStatus.SUCCEEDED
         writeback.receipt = receipt
+        writeback.detail = ""
         writeback.completed_at_ms = now
         self.store.put(writeback)
         self._record(

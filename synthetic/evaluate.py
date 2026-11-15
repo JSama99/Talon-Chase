@@ -23,7 +23,6 @@ from chase.domain.clock import FakeClock, SequentialIds
 from chase.domain.models import (
     HOUR_MS,
     MINUTE_MS,
-    Attempt,
     Carrier,
     Channel,
     Chase,
@@ -32,10 +31,14 @@ from chase.domain.models import (
     Document,
     Escalation,
     Load,
+    OutboxMessage,
+    OutboxPurpose,
+    OutboxStatus,
 )
 from chase.domain.schedule import to_local
 from chase.engine import ChaseEngine
 from chase.evidence import verify_chain
+from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.memory import MemoryStore
 from chase.writeback.adapters import FakeApiAdapter
@@ -88,13 +91,23 @@ def run(seed: int = SEED) -> dict:
     for load in pack.loads:
         engine.intake_load(load)
 
+    outbox = OutboxDispatcher(engine)
+
+    def settle() -> None:
+        for _ in range(10):
+            report = outbox.dispatch()
+            if not report.changed and not engine.tick():
+                return
+
     def advance(duration_ms: int, step_ms: int = 30 * MINUTE_MS) -> None:
         end = clock.now_ms() + duration_ms
         while clock.now_ms() < end:
             clock.advance(min(step_ms, end - clock.now_ms()))
             engine.tick()
+            settle()
 
     engine.tick()
+    settle()
     advance(HOUR_MS)
     dispatcher = {c.carrier_id: c.email for c in pack.contacts if c.email}
     loads = {load.id: load for load in pack.loads}
@@ -109,6 +122,7 @@ def run(seed: int = SEED) -> dict:
             body=body,
             attachments=attachments or [],
         )
+        settle()
 
     shas: dict[str, str] = {}
     for fixture in pack.fixtures:
@@ -148,9 +162,11 @@ def run(seed: int = SEED) -> dict:
     carriers = {c.id: c for c in store.find(Carrier)}
     chase_load = {c.id: loads[c.load_id] for c in store.find(Chase)}
     quiet_violations = 0
-    for attempt in store.find(Attempt):
-        tz = carriers[chase_load[attempt.chase_id].carrier_id].timezone
-        if not 7 <= to_local(attempt.sent_at_ms, tz).hour < 20:
+    for message in store.find(OutboxMessage, status=OutboxStatus.SENT):
+        if message.purpose is not OutboxPurpose.CARRIER_REQUEST:
+            continue
+        tz = carriers[chase_load[message.chase_id].carrier_id].timezone
+        if not 7 <= to_local(message.sent_at_ms, tz).hour < 20:
             quiet_violations += 1
     chains_ok = sum(1 for load in pack.loads if verify_chain(store.evidence(load.id)).ok)
     leaked = 0

@@ -30,6 +30,11 @@ class EmailMessage:
     body: str
     cc: list[str] = field(default_factory=list)
     attachments: list[OutgoingAttachment] = field(default_factory=list)
+    # The same for every try of one message. Pass it to the provider as its
+    # idempotency key where the provider supports one.
+    idempotency_key: str = ""
+    # Stable Message-ID header, so a repeated delivery is recognisably the same email.
+    message_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,12 @@ class SmsMessage:
     from_number: str
     to: str
     body: str
+    idempotency_key: str = ""
+
+
+class PermanentSendError(Exception):
+    """The provider refused the message for good (bad address, blocked number).
+    Any other exception from ``send`` is treated as temporary and retried."""
 
 
 class EmailPort(Protocol):
@@ -76,11 +87,21 @@ class AdapterError(Exception):
         self.transient = transient
 
 
+class AdapterPending(Exception):
+    """The filing is under way but not confirmed yet (for example, the packet email
+    is queued). Not a failure: the engine checks again later."""
+
+    def __init__(self, reference: str) -> None:
+        super().__init__(f"filing pending: {reference}")
+        self.reference = reference
+
+
 @dataclass(frozen=True)
 class WriteBackRequest:
     idempotency_key: str
     broker_id: str
     load_id: str
+    chase_id: str
     load_number: str
     document_sha256: str
     filename: str

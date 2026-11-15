@@ -16,7 +16,7 @@ def run_tool(*args):
 def test_standalone_verifier_agrees_and_detects_tamper(tmp_path):
     world = World()
     load = world.make_load(consignee_name="Entrepôt Montréal")
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, signature_present=False)
     world.send_pod(load)
     export = world.engine.export_evidence(load.id)

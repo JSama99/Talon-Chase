@@ -20,6 +20,7 @@ from chase.domain.models import (
     Contact,
     EscalationReason,
     InboundStatus,
+    OutboxStatus,
     Step,
     WriteBack,
     WriteBackStatus,
@@ -34,7 +35,7 @@ DAY = 24 * HOUR_MS
 
 def test_happy_path_closes_with_passed_check_and_writeback(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     assert world.chase(load).state is ChaseState.ASKED
     assert [m.to for m in world.email.sent] == [[world.dispatcher.email]]
 
@@ -55,7 +56,7 @@ def test_happy_path_closes_with_passed_check_and_writeback(world: World):
 
 def test_three_attempts_then_escalation_and_no_fourth_send(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * DAY)
 
     emails = world.carrier_emails()
@@ -81,21 +82,22 @@ def test_quiet_hours_respected_in_carrier_timezone():
     tz = "America/Los_Angeles"
     world = World(start=at(2026, 11, 10, 22, 30, tz=tz), carrier_tz=tz)
     load = world.make_load()
-    assert world.engine.tick() == 0 and world.email.sent == []
+    assert world.tick() == 0 and world.email.sent == []
 
     world.run(5 * DAY)
-    attempts = world.store.find(Attempt, chase_id=world.chase(load).id)
-    assert len(attempts) >= 4
-    for attempt in attempts:
-        hour = to_local(attempt.sent_at_ms, tz).hour
-        assert 7 <= hour < 20, f"{attempt.step} sent at {hour}:00 carrier-local"
-    first = min(attempts, key=lambda a: a.sent_at_ms)
+    sent = [m for m in world.messages(load) if m.status is OutboxStatus.SENT]
+    assert len(sent) >= 4
+    for message in sent:
+        hour = to_local(message.sent_at_ms, tz).hour
+        assert 7 <= hour < 20, f"{message.subject or 'text'} sent at {hour}:00 carrier-local"
+    first = min(sent, key=lambda m: m.sent_at_ms)
     assert first.sent_at_ms == at(2026, 11, 11, 7, tz=tz)
+    assert len(world.store.find(Attempt, chase_id=world.chase(load).id)) == len(sent)
 
 
 def test_failed_check_reasks_with_specific_reason(world: World):
     load = world.make_load(expected_pages=2)
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, signature_present=False, page_count=1)
 
     chase = world.chase(load)
@@ -123,7 +125,7 @@ def test_failed_check_reasks_with_specific_reason(world: World):
 )
 def test_exception_notes_never_filed_clean(world: World, overrides):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     sent_before = len(world.email.sent)
     world.send_pod(load, **overrides)
 
@@ -140,7 +142,7 @@ def test_exception_notes_never_filed_clean(world: World, overrides):
 def test_document_for_other_open_load_is_rerouted(world: World):
     load_a = world.make_load()
     load_b = world.make_load()
-    world.engine.tick()
+    world.tick()
 
     # The dispatcher answers the thread for load A with load B's paperwork.
     world.reply(load_a, "Here you go.", [("pod.pdf", pod(load_b))])
@@ -161,7 +163,7 @@ def test_document_for_other_open_load_is_rerouted(world: World):
 
 def test_new_reply_address_is_not_adopted(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     contacts_before = {c.id for c in world.store.find(Contact)}
     newcomer = "new.dispatcher@redlinetrucking.example"
 
@@ -181,7 +183,7 @@ def test_new_reply_address_is_not_adopted(world: World):
 
 def test_bank_change_message_is_held_without_reply(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     sent_before = (len(world.email.sent), len(world.sms.sent))
 
     inbound = world.reply(
@@ -204,7 +206,7 @@ def test_outbound_never_contains_rate_or_customer(world: World, monkeypatch):
     world.dispatcher.phone, world.dispatcher.sms_consent = "+13125550199", True
     world.store.put(world.dispatcher)
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * HOUR_MS)  # first email, then the driver text
     world.send_pod(load, readable=False)  # forces a re-ask as well
     world.run(4 * DAY)
@@ -234,14 +236,14 @@ def test_outbound_never_contains_rate_or_customer(world: World, monkeypatch):
     monkeypatch.setattr(
         outbound, "email_body", lambda broker, load, step, link, reasons: "Load for Acme Foods"
     )
-    leaky.engine.tick()
+    leaky.tick()
     assert leaky.email.sent == []
     assert [e.reason for e in leaky.escalations(load_2)] == [EscalationReason.OUTBOUND_BLOCKED]
 
 
 def test_writeback_is_idempotent_after_transient_failure(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.tms.fail_after_commit_next = 1  # the TMS writes the file, then the response is lost
     world.send_pod(load)
 
@@ -258,7 +260,7 @@ def test_writeback_is_idempotent_after_transient_failure(world: World):
 
 def test_adapter_outage_falls_back_to_packet_email(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.tms.down = True
     world.send_pod(load)
     assert world.chase(load).state is ChaseState.PASSED
@@ -283,7 +285,7 @@ def test_sms_requires_consent_and_honors_stop(world: World):
     world.driver.sms_consent = False
     world.store.put(world.driver)
     load_1 = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * HOUR_MS)
     assert world.sms.sent == []
     assert "sms.skipped" in [e.kind for e in world.store.evidence(load_1.id)]
@@ -292,18 +294,16 @@ def test_sms_requires_consent_and_honors_stop(world: World):
     world.driver.sms_consent = True
     world.store.put(world.driver)
     load_2 = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(16 * HOUR_MS)  # past the quiet hours, to 07:00 the next morning
     assert [m.to for m in world.sms.sent] == [world.driver.phone]
     assert "STOP" in world.sms.sent[0].body
 
     # The driver replies STOP: never texted again, on this load or the next.
-    world.engine.handle_inbound(
-        broker_id="brk-1", channel=Channel.SMS, from_addr="3125550142", body=" stop "
-    )
+    world.inbound(broker_id="brk-1", channel=Channel.SMS, from_addr="3125550142", body=" stop ")
     assert world.store.get(Contact, world.driver.id).sms_stopped is True
     load_3 = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * DAY)
     assert len(world.sms.sent) == 1
     assert world.chase(load_2).attempts_sent == world.chase(load_3).attempts_sent == 3
@@ -312,7 +312,7 @@ def test_sms_requires_consent_and_honors_stop(world: World):
 def test_kill_switch_stops_all_outbound(world: World):
     world.engine.set_global_outbound(False, by="jermaine")
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(3 * DAY, step_ms=HOUR_MS)
     assert world.email.sent == [] and world.sms.sent == []
     assert world.chase(load).state is ChaseState.OPEN
@@ -323,7 +323,7 @@ def test_kill_switch_stops_all_outbound(world: World):
     assert world.tms.filed == {} and world.email.sent == []
 
     world.engine.set_global_outbound(True, by="jermaine")
-    world.engine.tick()
+    world.tick()
     assert world.chase(load).state is ChaseState.CLOSED and len(world.tms.filed) == 1
 
     # The per-broker switch stops one broker and leaves the other running.
@@ -339,7 +339,7 @@ def test_kill_switch_stops_all_outbound(world: World):
 
 def test_evidence_chain_verifies_and_detects_tamper_at_index(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, signature_present=False)
     world.clock.advance(HOUR_MS)
     world.send_pod(load)
@@ -364,7 +364,7 @@ def test_evidence_chain_verifies_and_detects_tamper_at_index(world: World):
 def _scenario(variant: int = 0) -> dict[str, str]:
     world = World()
     loads = [world.make_load() for _ in range(3)]
-    world.engine.tick()
+    world.tick()
     world.send_pod(loads[0])
     world.send_pod(loads[1], signature_present=bool(variant))
     world.run(4 * 24 * HOUR_MS)
@@ -393,7 +393,7 @@ def test_illegal_state_transition_raises(world: World):
     assert ALLOWED[ChaseState.ESCALATED] == frozenset({ChaseState.CLOSED})
 
     # The engine cannot be talked out of a terminal state either.
-    world.engine.tick()
+    world.tick()
     world.send_pod(load)
     world.send_pod(load, signature_present=False)
     world.run(5 * 24 * HOUR_MS, step_ms=HOUR_MS)

@@ -14,6 +14,7 @@ from chase.domain.models import (
     EscalationReason,
     Inbound,
     InboundStatus,
+    OutboxStatus,
     Role,
     Step,
 )
@@ -29,7 +30,7 @@ def upload_token(world: World, load, ttl_ms: int = DAY) -> str:
 
 def test_upload_link_files_the_document(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     link = world.email.sent[0].body.split("upload it here:\n")[1].split("\n")[0]
     token = link.rsplit("/u/", 1)[1]
     inbound = world.engine.handle_upload(token, "photo.jpg", pod(load))
@@ -40,7 +41,7 @@ def test_upload_link_files_the_document(world: World):
 def test_upload_token_is_bound_to_its_load_and_expires(world: World):
     load = world.make_load()
     other = world.make_load()
-    world.engine.tick()
+    world.tick()
     token = upload_token(world, load, ttl_ms=HOUR_MS)
     body, signature = token.split(".")
     forged = make_upload_token(b"wrong-secret", other.id, world.clock.now_ms() + DAY)
@@ -60,7 +61,7 @@ def test_upload_token_is_bound_to_its_load_and_expires(world: World):
 
 def test_duplicate_delivery_of_the_same_message_is_ignored(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     kwargs = dict(
         broker_id="brk-1",
         channel=Channel.EMAIL,
@@ -70,8 +71,8 @@ def test_duplicate_delivery_of_the_same_message_is_ignored(world: World):
         attachments=[("pod.pdf", pod(load))],
         external_id="<msg-1@redline>",
     )
-    first = world.engine.handle_inbound(**kwargs)
-    second = world.engine.handle_inbound(**kwargs)
+    first = world.inbound(**kwargs)
+    second = world.inbound(**kwargs)
     assert first.id == second.id and len(world.store.find(Inbound)) == 1
     assert len(world.tms.filed) == 1
 
@@ -89,15 +90,15 @@ def test_chase_opens_two_hours_after_appointment_with_no_status(world: World):
 def test_intake_twice_does_not_open_a_second_chase(world: World):
     load = world.make_load()
     assert world.engine.intake_load(load).id == world.chase(load).id
-    world.engine.tick()
+    world.tick()
     world.engine.intake_load(load)
-    world.engine.tick()
+    world.tick()
     assert len(world.email.sent) == 1
 
 
 def test_promise_pushes_the_next_ask_back(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.clock.advance(HOUR_MS)
     world.reply(load, "Driver is still out, will send tomorrow.")
     chase = world.chase(load)
@@ -111,7 +112,7 @@ def test_promise_pushes_the_next_ask_back(world: World):
 
 def test_out_of_office_does_not_stop_the_schedule(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.reply(load, "Automatic reply: I am out of the office until Monday.")
     assert world.escalations(load) == []
     world.run(4 * DAY)
@@ -128,7 +129,7 @@ def test_out_of_office_does_not_stop_the_schedule(world: World):
 )
 def test_replies_the_agent_cannot_act_on_go_to_a_person(world: World, body, reason):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     sent = len(world.email.sent)
     world.reply(load, body)
     assert [e.reason for e in world.escalations(load)] == [reason]
@@ -137,7 +138,7 @@ def test_replies_the_agent_cannot_act_on_go_to_a_person(world: World, body, reas
 
 def test_acknowledging_closes_the_chase_and_needs_a_name(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, exception_notes=["refused 3 cases"])
     escalation = world.escalations(load)[0]
     queue = world.engine.queue("brk-1")
@@ -154,7 +155,7 @@ def test_acknowledging_closes_the_chase_and_needs_a_name(world: World):
 
 def test_document_after_escalation_is_kept_but_changes_nothing(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * DAY)
     assert world.chase(load).state is ChaseState.ESCALATED
     world.send_pod(load)
@@ -165,7 +166,7 @@ def test_document_after_escalation_is_kept_but_changes_nothing(world: World):
 
 def test_low_confidence_reading_goes_to_a_person(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, confidence=62)
     assert [e.reason for e in world.escalations(load)] == [EscalationReason.LOW_CONFIDENCE]
     assert world.tms.filed == {}
@@ -173,14 +174,14 @@ def test_low_confidence_reading_goes_to_a_person(world: World):
 
 def test_delivery_date_far_from_appointment_goes_to_a_person(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, delivery_date_ms=load.delivery_appt_ms + 3 * DAY)
     assert [e.reason for e in world.escalations(load)] == [EscalationReason.DOCUMENT_EXCEPTION]
 
 
 def test_carrier_invoice_is_typed_and_never_filed_as_a_pod(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load, doc_type="CARRIER_INVOICE")
     document = world.store.find(Document, load_id=load.id)[0]
     assert document.doc_type is DocType.CARRIER_INVOICE
@@ -190,14 +191,14 @@ def test_carrier_invoice_is_typed_and_never_filed_as_a_pod(world: World):
 
 def test_unparseable_file_is_treated_as_unreadable(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.reply(load, "here", [("scan.jpg", b"\xff\xd8\xff not json")])
     assert "too blurry or cropped" in world.email.sent[-1].body
 
 
 def test_reask_limit_then_a_person(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     for _ in range(4):
         world.clock.advance(HOUR_MS)
         world.send_pod(load, signature_present=False)
@@ -207,7 +208,7 @@ def test_reask_limit_then_a_person(world: World):
 
 def test_one_good_document_among_bad_ones_is_enough(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.reply(
         load,
         "both scans",
@@ -219,8 +220,8 @@ def test_one_good_document_among_bad_ones_is_enough(world: World):
 
 def test_message_with_no_home_lands_in_the_queue(world: World):
     world.make_load()
-    world.engine.tick()
-    inbound = world.engine.handle_inbound(
+    world.tick()
+    inbound = world.inbound(
         broker_id="brk-1",
         channel=Channel.EMAIL,
         from_addr="someone@elsewhere.example",
@@ -234,7 +235,7 @@ def test_message_with_no_home_lands_in_the_queue(world: World):
 
 def test_stranger_naming_a_load_is_held_as_risk(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     inbound = world.reply(
         load, "Send me the pickup details", sender="dispatch@redIine-trucking.example"
     )
@@ -246,7 +247,7 @@ def test_free_mail_address_is_never_treated_as_the_same_company(world: World):
     world.dispatcher.email = "redline.dispatch@gmail.com"
     world.store.put(world.dispatcher)
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.reply(load, "POD attached", [("pod.pdf", pod(load))], sender="other.person@gmail.com")
     assert [e.reason for e in world.escalations(load)] == [EscalationReason.RISK]
     assert world.tms.filed == {}
@@ -258,7 +259,7 @@ def test_approved_contact_is_used_on_the_next_load(world: World):
     )
     assert contact.source == "approved:Jermaine"
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     assert set(world.email.sent[0].to) == {world.dispatcher.email, contact.email}
     world.reply(load, "POD", [("pod.pdf", pod(load))], sender=contact.email)
     assert world.chase(load).state is ChaseState.CLOSED
@@ -276,15 +277,22 @@ def test_load_with_no_dispatcher_email_goes_straight_to_a_person(world: World):
 def test_email_outage_is_retried(world: World):
     load = world.make_load()
     world.email.fail_next = 2
-    world.engine.tick()
-    assert world.email.sent == [] and world.chase(load).state is ChaseState.OPEN
-    world.run(HOUR_MS)
-    assert len(world.email.sent) == 1 and world.chase(load).state is ChaseState.ASKED
+    world.tick()
+    # The decision to ask is committed even though the provider is down.
+    assert world.email.sent == [] and world.chase(load).state is ChaseState.ASKED
+    (message,) = world.messages(load)
+    assert message.status is OutboxStatus.PENDING and message.tries == 1
+    world.run(HOUR_MS, step_ms=MINUTE_MS)
+    assert len(world.email.sent) == 1
+    message = world.messages(load)[0]
+    assert message.status is OutboxStatus.SENT and message.tries == 3
+    kinds = [e.kind for e in world.store.evidence(load.id)]
+    assert kinds.count("message.retry") == 2 and kinds.count("message.sent") == 1
 
 
 def test_permanent_adapter_failure_skips_retries(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.tms.down, world.tms.permanent = True, True
     world.send_pod(load)
     assert world.tms.calls == 1 and world.chase(load).state is ChaseState.CLOSED
@@ -293,20 +301,20 @@ def test_permanent_adapter_failure_skips_retries(world: World):
 
 def test_packet_failure_after_api_failure_goes_to_a_person(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.tms.down, world.tms.permanent = True, True
     world.email.fail_next = 99
     world.send_pod(load)
-    world.run(2 * HOUR_MS, step_ms=MINUTE_MS)
+    world.run(8 * HOUR_MS, step_ms=MINUTE_MS)
     assert [e.reason for e in world.escalations(load)] == [EscalationReason.WRITEBACK_FAILED]
 
 
 def test_driver_text_reply_with_photo_is_matched_to_the_load(world: World):
     load = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.run(4 * HOUR_MS)
     assert len(world.sms.sent) == 1
-    world.engine.handle_inbound(
+    world.inbound(
         broker_id="brk-1",
         channel=Channel.SMS,
         from_addr="+13125550142",
@@ -319,7 +327,7 @@ def test_driver_text_reply_with_photo_is_matched_to_the_load(world: World):
 def test_late_tick_does_not_send_a_burst(world: World):
     load = world.make_load()
     world.clock.advance(3 * DAY)  # the service was down for three days
-    world.engine.tick()
+    world.tick()
     assert len(world.carrier_emails()) == 1 and world.sms.sent == []
     world.run(30 * MINUTE_MS)
     assert len(world.carrier_emails()) == 1

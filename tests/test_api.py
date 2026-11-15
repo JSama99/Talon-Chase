@@ -47,6 +47,7 @@ def test_api_key_is_required_everywhere_except_health_and_upload(api):
         ("post", "/v1/loads"),
         ("post", "/v1/inbound"),
         ("post", "/v1/tick"),
+        ("post", "/v1/dispatch"),
         ("get", "/v1/brokers/brk-1/queue"),
         ("get", "/v1/brokers/brk-1/summary"),
         ("get", "/v1/brokers/brk-1/chases"),
@@ -69,7 +70,9 @@ def test_api_key_is_required_everywhere_except_health_and_upload(api):
 def test_full_flow_over_http(api):
     world, client = api
     load = new_load(world, client)
-    assert client.post("/v1/tick", headers=H).json() == {"steps": 1}
+    ticked = client.post("/v1/tick", headers=H).json()
+    assert ticked["steps"] == 1 and ticked["dispatch"]["sent"] == 1
+    assert client.post("/v1/dispatch", headers=H).json()["sent"] == 0
 
     content = base64.b64encode(pod(world.store.get(Load, load["id"]))).decode()
     reply = {
@@ -91,6 +94,8 @@ def test_full_flow_over_http(api):
     assert [w["status"] for w in detail["writebacks"]] == ["SUCCEEDED"]
     assert detail["load"]["ready_to_invoice_at_ms"] is not None
     assert len(detail["attempts"]) == 1 and len(detail["inbound"]) == 1
+    assert [m["status"] for m in detail["messages"]] == ["SENT"]
+    assert detail["attempts"][0]["outbox_id"] == detail["messages"][0]["id"]
 
     export = client.get(f"/v1/loads/{load['id']}/evidence", headers=H).json()
     assert export["verification"]["ok"]

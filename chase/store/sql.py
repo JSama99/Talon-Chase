@@ -24,6 +24,8 @@ from chase.evidence.chain import EvidenceEvent
 
 T = TypeVar("T")
 ADVISORY_KEY = 7_423_001
+# A second insert with the same key fails, so one decision can never become two messages.
+UNIQUE = {"OutboxMessage": ("idempotency_key",)}
 
 
 def _unwrap_optional(tp: Any) -> tuple[Any, bool]:
@@ -63,13 +65,15 @@ def build_metadata() -> tuple[sa.MetaData, dict[type, sa.Table]]:
         columns = []
         for f in dataclasses.fields(cls):
             optional = _unwrap_optional(hints[f.name])[1]
+            unique = f.name in UNIQUE.get(cls.__name__, ())
             columns.append(
                 sa.Column(
                     f.name,
                     _column_type(hints[f.name]),
                     primary_key=f.name == "id",
                     nullable=optional,
-                    index=f.name in indexed,
+                    index=(f.name in indexed) and not unique,
+                    unique=unique,
                 )
             )
         tables[cls] = sa.Table(table_name(cls), metadata, *columns)

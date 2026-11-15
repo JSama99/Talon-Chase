@@ -15,7 +15,8 @@ them in the broker's time zone.
 
 - A header line: how many loads need a person, how many are in progress, how many were
   filed. From `summary.needs_a_person`, `in_progress`, `filed`.
-- A banner when outbound is off (`outbound_enabled` or `global_outbound_enabled` false).
+- A banner when outbound is off (`outbound_enabled` or `global_outbound_enabled` false),
+  with `messages_waiting`: how many are held until it is turned back on.
 - One row per open escalation, oldest first: load number, carrier, a plain reason, how
   long it has waited, the carrier's phone numbers as tap-to-call.
 - Below it, unmatched messages: sender, subject, received time.
@@ -36,6 +37,7 @@ Plain wording for each reason:
 | `NO_CONTACT` | No dispatcher email for this carrier |
 | `REASK_LIMIT` | Carrier keeps sending a document that fails |
 | `OUTBOUND_BLOCKED` | A message was stopped before sending |
+| `SEND_FAILED` | Could not deliver a message to the carrier |
 
 Action on a row: open the load. Acknowledging happens there, with a required name and
 an optional note (`POST /v1/escalations/{id}/acknowledge`).

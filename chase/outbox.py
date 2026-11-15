@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 from chase.domain.models import (
     MINUTE_MS,
     Attachment,
+    Attempt,
     Broker,
     Channel,
     Chase,
@@ -47,7 +48,7 @@ from chase.domain.models import (
     OutboxStatus,
     Step,
 )
-from chase.domain.risk import normalize_phone
+from chase.domain.risk import normalize_email, normalize_phone
 from chase.domain.schedule import in_quiet_hours, next_allowed
 from chase.domain.states import ACTIVE_STATES
 from chase.evidence import sha256_hex
@@ -208,6 +209,14 @@ class OutboxDispatcher:
                     self._cancel(message, stale, now)
                     report.cancelled += 1
                     continue
+                undeliverable = self._drop_bounced(message)
+                if undeliverable:
+                    self._cancel(message, undeliverable, now)
+                    chase = self.store.get(Chase, message.chase_id)
+                    if chase is not None:  # the stale check above means it still awaits a reply
+                        self.engine._escalate(chase, EscalationReason.SEND_FAILED, undeliverable)
+                    report.cancelled += 1
+                    continue
                 if message.quiet_tz and in_quiet_hours(now, message.quiet_tz, broker.config):
                     self._defer(message, next_allowed(now, message.quiet_tz, broker.config), now)
                     report.deferred += 1
@@ -343,6 +352,38 @@ class OutboxDispatcher:
             return f"chase is {chase.state.value}"
         if message.channel is Channel.SMS and not self._may_text(message):
             return "recipient opted out or has no consent on file"
+        return ""
+
+    def _drop_bounced(self, message: OutboxMessage) -> str:
+        """Take addresses that bounced for good off a queued or retrying carrier request,
+        checked again at send time because a bounce can land after the request was queued.
+        Returns why the request cannot go out when no recipient is left, else an empty
+        string."""
+        if (
+            message.purpose is not OutboxPurpose.CARRIER_REQUEST
+            or message.channel is not Channel.EMAIL
+        ):
+            return ""
+        load = self.store.get(Load, message.load_id)
+        if load is None:
+            return ""
+        dead = {
+            normalize_email(c.email)
+            for c in self.store.find(Contact, carrier_id=load.carrier_id)
+            if c.email and c.email_undeliverable_at_ms is not None
+        }
+        to = [a for a in message.to if normalize_email(a) not in dead]
+        cc = [a for a in message.cc if normalize_email(a) not in dead]
+        if len(to) == len(message.to) and len(cc) == len(message.cc):
+            return ""
+        if not to:
+            return f"email to {', '.join(message.to)} bounced earlier and no other address is left"
+        message.to, message.cc = to, cc
+        self.store.put(message)
+        # The request and its delivery list the same recipients (ontology rule TC-11).
+        for attempt in self.store.find(Attempt, outbox_id=message.id):
+            attempt.to, attempt.cc = list(to), list(cc)
+            self.store.put(attempt)
         return ""
 
     def _may_text(self, message: OutboxMessage) -> bool:

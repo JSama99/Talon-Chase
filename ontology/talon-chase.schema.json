@@ -644,7 +644,8 @@
         "email",
         "phone",
         "verified",
-        "source"
+        "source",
+        "email_undeliverable_at_ms"
       ],
       "properties": {
         "id": {
@@ -679,6 +680,18 @@
         "source": {
           "description": "'tms', or 'approved:<operator id>'.",
           "type": "string"
+        },
+        "email_undeliverable_at_ms": {
+          "description": "When mail to this address bounced for good; it is not emailed again.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "description": "A person at a carrier the agent may write to. Only verified contacts are used.",
@@ -910,9 +923,11 @@
             "inbound.late",
             "inbound.received",
             "inbound.unmatched",
+            "inbound.unrouted",
             "load.delivered",
             "load.ready_to_invoice",
             "load.received",
+            "message.bounced",
             "message.cancelled",
             "message.deferred",
             "message.duplicate",
@@ -1253,6 +1268,22 @@
           "if": {
             "properties": {
               "kind": {
+                "const": "inbound.unrouted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.inbound.unrouted"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
                 "const": "load.delivered"
               }
             }
@@ -1293,6 +1324,22 @@
             "properties": {
               "payload": {
                 "$ref": "#/$defs/payload.load.received"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "message.bounced"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.message.bounced"
               }
             }
           }
@@ -2807,6 +2854,30 @@
         }
       }
     },
+    "payload.inbound.unrouted": {
+      "type": "object",
+      "title": "inbound.unrouted payload",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "external_id"
+      ],
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_id": {
+          "type": "string"
+        }
+      }
+    },
     "payload.load.delivered": {
       "type": "object",
       "title": "load.delivered payload",
@@ -2866,6 +2937,35 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "payload.message.bounced": {
+      "type": "object",
+      "title": "message.bounced payload",
+      "additionalProperties": false,
+      "required": [
+        "outbox_id",
+        "email",
+        "kind",
+        "permanent",
+        "detail"
+      ],
+      "properties": {
+        "outbox_id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "permanent": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
         }
       }
     },

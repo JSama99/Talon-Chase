@@ -87,6 +87,8 @@ hash           e416250130e9984385f335a43fc2ef0965c46aa6d2c0db8ef4582714b2b51a8b
 | `attempt.queued` | The agent decided to ask: step, channel, recipients, subject, SHA-256 of the body, outbox id |
 | `message.sent`, `message.retry`, `message.deferred`, `message.cancelled`, `message.failed`, `message.reclaimed`, `message.duplicate` | What happened to that message in the outbox; see [OUTBOX.md](OUTBOX.md) |
 | `sms.skipped`, `outbound.blocked`, `outbound.refused` | A request was not made, and why |
+| `message.bounced` | The email provider reported a bounce or spam complaint: address, kind, whether it is permanent. On the load's chain when the message was ours, else `system` |
+| `inbound.unrouted` | On `system`: an email arrived for no broker's mailbox; sender, recipients and provider id are kept |
 | `inbound.received`, `inbound.classified`, `inbound.held`, `inbound.late` | A reply arrived and what was done with it |
 | `document.received`, `document.rerouted` | A file arrived: its SHA-256, name and type |
 | `check.completed` | Result and reasons for one document |

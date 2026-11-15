@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from chase.channels.resend import ResendInbox
 from chase.domain.models import (
     Attempt,
     Broker,
@@ -42,6 +43,7 @@ from chase.domain.models import (
     Role,
     WriteBack,
 )
+from chase.domain.risk import normalize_email
 from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
 from chase.evidence import canonical_json, sha256_hex
@@ -205,6 +207,9 @@ def create_app(
     *,
     login_from: str = "Talon Chase <signin@talonchase.invalid>",
     secure_cookies: bool | None = None,
+    resend_webhook_secret: str = "",
+    resend_inbox: ResendInbox | None = None,
+    resend_inbound_domain: str = "",
 ) -> FastAPI:
     if len(api_key) < 16:
         raise ValueError("the API key must be at least 16 characters")
@@ -308,7 +313,19 @@ def create_app(
 
         def save():
             need(Carrier, body.carrier_id)
-            contact = Contact(**body.model_dump(exclude={"sms_consent"}), verified=True)
+            before = store.get(Contact, body.id)
+            # An address that bounced for good stays suppressed through every sync of
+            # the same address; a new address starts clean.
+            same = (
+                before is not None
+                and bool(body.email.strip())
+                and normalize_email(before.email) == normalize_email(body.email)
+            )
+            contact = Contact(
+                **body.model_dump(exclude={"sms_consent"}),
+                verified=True,
+                email_undeliverable_at_ms=before.email_undeliverable_at_ms if same else None,
+            )
             store.put(contact)
             # The broker's system reports consent; a change becomes a consent record.
             # A STOP reply is never undone by a sync: that needs an operator.
@@ -555,7 +572,17 @@ def create_app(
             run(engine.set_global_outbound, body.enabled, by=body.by)
         return {"enabled": body.enabled, "scope": body.broker_id or "global"}
 
+    from chase.api.resend_hooks import mount_resend
     from chase.app.views import mount_broker_app
+
+    mount_resend(
+        app,
+        engine,
+        run,
+        secret=resend_webhook_secret,
+        inbox=resend_inbox,
+        inbound_domain=resend_inbound_domain,
+    )
 
     mount_broker_app(
         app,

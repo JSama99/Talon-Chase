@@ -5,9 +5,10 @@ the carrier for the signed proof of delivery (POD), follows up on a schedule, ch
 the document, files it to the broker's system, and hands the load to a person when
 it is stuck or anything looks risky.
 
-**Status: version 1 engine, synthetic data only.** Nothing here contacts a real
-carrier, mailbox, phone, language model or TMS. Those sit behind interfaces with
-in-memory stand-ins. See [What is not built](#what-is-not-built).
+**Status: version 1, not yet used by a broker.** Email is real through Resend once
+an API key is set ([docs/EMAIL.md](docs/EMAIL.md)); without one, and for texts,
+the language model and the TMS, everything sits behind interfaces with in-memory
+stand-ins. See [What is not built](#what-is-not-built).
 
 ## Quick start
 
@@ -95,7 +96,7 @@ chase/
   engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
   outbox.py    the outbox: enqueue, and the dispatcher that delivers, retries, gives up
   ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
-  channels/    in-memory email and text stand-ins
+  channels/    Resend email (send, inbound, bounces); in-memory email and text stand-ins
   reader/      rule-based reply classifier; stand-in document reader
   writeback/   FakeApiAdapter (TMS API stand-in), PacketEmailAdapter (works with any TMS)
   store/       MemoryStore, SqlStore (SQLite and Postgres)
@@ -106,7 +107,7 @@ synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
 migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
 ontology/      generated JSON Schema and JSON-LD context
 tools/         verify_evidence.py, a standalone verifier with no project imports
-docs/          ONTOLOGY.md (generated), EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
+docs/          ONTOLOGY.md (generated), EMAIL.md, EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -147,6 +148,7 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 | `POST /v1/escalations/{id}/acknowledge` | An operator resolves an escalation: `HANDLED_BY_HAND`, `WAIVED`, `DISPUTED`, or `OTHER` with a note |
 | `POST /v1/contacts/approve` | An operator approves a new contact |
 | `POST /v1/contacts/{id}/consent` | An operator records a grant or withdrawal of text consent, with its source |
+| `POST /webhooks/resend` | Resend replies and bounces; Svix-signed, see [docs/EMAIL.md](docs/EMAIL.md) |
 | `POST /v1/outbound/switch` | Kill switch: global needs a `PLATFORM` operator; per broker, one of that broker's |
 
 Every `by` is an operator id. An unknown, inactive or other-broker operator gets 403.
@@ -208,11 +210,9 @@ real PODs. That needs labelled documents from a pilot broker.
 
 ## What is not built
 
-- **Real channels.** No mailbox, text line, language model or TMS integration. Each
-  needs its own adapter behind the existing interface.
-- **Sign-in email delivery.** Sign-in links go through the same email port as
-  everything else, which is still the in-memory stand-in: until the mailbox adapter
-  exists, use `python -m chase.app.link` to hand out links.
+- **Real channels, except email.** Email goes through Resend (see
+  [docs/EMAIL.md](docs/EMAIL.md)). There is still no text line, language model or TMS
+  integration; each needs its own adapter behind the existing interface.
 - **Document storage.** Files are stored in the database by content hash. Move them to
   object storage before real volume.
 - **Public holidays.** The schedule knows weekends and quiet hours, not holidays.
@@ -223,6 +223,6 @@ real PODs. That needs labelled documents from a pilot broker.
 ## Next steps
 
 1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
-2. One at a time: mailbox adapter (passing the outbox's idempotency key to the
-   provider; it also delivers sign-in links), document reader with labelled PODs,
-   first TMS adapter.
+2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md).
+3. One at a time: text messages (Twilio), document reader with labelled PODs, first
+   TMS adapter.

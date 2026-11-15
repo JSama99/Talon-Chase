@@ -168,8 +168,15 @@ class ChaseEngine:
             contacts = [c for c in contacts if c.id in load.contact_ids]
         return contacts
 
+    def _mailable(self, contact: Contact) -> bool:
+        return bool(contact.email) and contact.email_undeliverable_at_ms is None
+
     def _dispatcher_emails(self, load: Load) -> list[str]:
-        return [c.email for c in self._send_contacts(load) if c.role is Role.DISPATCHER and c.email]
+        return [
+            c.email
+            for c in self._send_contacts(load)
+            if c.role is Role.DISPATCHER and self._mailable(c)
+        ]
 
     def consent_history(self, contact_id: str) -> list[Consent]:
         """Every consent record for the contact, in the order they were recorded."""
@@ -410,7 +417,7 @@ class ChaseEngine:
             contact = self.store.get(Contact, chase.reply_to_contact_id)
             to = (
                 [contact.email]
-                if contact is not None and contact.verified and contact.email
+                if contact is not None and contact.verified and self._mailable(contact)
                 else self._dispatcher_emails(load)
             )
             if not self._send_email(chase, load, broker, step, to, [], chase.fail_reasons):
@@ -1406,6 +1413,69 @@ class ChaseEngine:
         operator: Operator = self._need(Operator, operator_id)
         chain = f"broker:{operator.broker_id}" if operator.broker_id else SYSTEM_CHAIN
         self._record(chain, "operator.signed_in", {"operator_id": operator.id})
+
+    def broker_for_mail(self, addresses: Sequence[str], mailbox_hash: str = "") -> str:
+        """Which broker an incoming email is for: the "+hash" of the provider's inbound
+        address names a broker id, otherwise the broker whose chase mailbox it was sent
+        to. Empty when neither matches."""
+        if mailbox_hash and self.store.get(Broker, mailbox_hash) is not None:
+            return mailbox_hash
+        wanted = {a.strip().lower() for a in addresses}
+        for broker in sorted(self.store.find(Broker), key=lambda b: b.id):
+            if broker.chase_mailbox.strip().lower() in wanted:
+                return broker.id
+        return ""
+
+    def record_unrouted(self, from_addr: str, to: Sequence[str], external_id: str) -> None:
+        """An email arrived that is not for any broker's mailbox. Kept as evidence so it
+        is never silently lost; nothing else is done with it."""
+        self._record(
+            SYSTEM_CHAIN,
+            "inbound.unrouted",
+            {"from": from_addr, "to": list(to), "external_id": external_id},
+        )
+
+    def record_bounce(
+        self, provider_id: str, email: str, kind: str, permanent: bool, detail: str
+    ) -> None:
+        """The email provider reports that a message did not arrive.
+
+        A permanent bounce marks the address undeliverable on every contact that has
+        it at that carrier (or anywhere, if the message is not ours), so it is never
+        emailed again. If it was a request for a POD and no other dispatcher address
+        is left, the load goes to a person. Temporary bounces are only recorded.
+        """
+        email = email.strip().lower()
+        sent = self.store.find(OutboxMessage, provider_id=provider_id) if provider_id else []
+        message = sent[0] if sent else None
+        load = self.store.get(Load, message.load_id) if message else None
+        chain = load.id if load else SYSTEM_CHAIN
+        self._record(
+            chain,
+            "message.bounced",
+            {
+                "outbox_id": message.id if message else "",
+                "email": email,
+                "kind": kind,
+                "permanent": permanent,
+                "detail": detail,
+            },
+        )
+        if not permanent:
+            return
+        for contact in self.store.find(Contact):
+            if load is not None and contact.carrier_id != load.carrier_id:
+                continue
+            if contact.email.strip().lower() == email and contact.email_undeliverable_at_ms is None:
+                contact.email_undeliverable_at_ms = self.clock.now_ms()
+                self.store.put(contact)
+        if message is None or load is None or message.purpose is not OutboxPurpose.CARRIER_REQUEST:
+            return
+        chase = self._need(Chase, message.chase_id)
+        if chase.state in ACTIVE_STATES and not self._dispatcher_emails(load):
+            self._escalate(
+                chase, EscalationReason.SEND_FAILED, f"email to {email} bounced: {detail}"
+            )
 
     def summary(self, broker_id: str) -> dict[str, Any]:
         """Counts for the broker's home screen."""

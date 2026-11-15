@@ -404,6 +404,7 @@ class OutboxDispatcher:
                         idempotency_key=message.idempotency_key,
                         message_id=f"<{sha256_hex(message.idempotency_key.encode())[:40]}"
                         "@talon-chase>",
+                        first_try=message.tries <= 1,
                     )
                 )
             else:

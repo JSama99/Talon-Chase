@@ -12,7 +12,7 @@ and a test fails if they fall behind.
 | --- | --- |
 | Version | `1.0.0` |
 | Id | `urn:talonsight:talon-chase:ontology:1.0.0` |
-| Schema SHA-256 | `065e6c7121cd9d423cd3173ef4e7e825fd919aaf59e96346af400ba9b5f9d31c` |
+| Schema SHA-256 | `65e6c83d89b71ee42ff3974b45dcc20ccf23ca57cbc8fe09d99abeea8a896168` |
 | Schema | [`ontology/talon-chase.schema.json`](../ontology/talon-chase.schema.json) |
 | JSON-LD context | [`ontology/talon-chase.context.jsonld`](../ontology/talon-chase.context.jsonld) |
 
@@ -110,6 +110,7 @@ A person at a carrier the agent may write to. Only verified contacts are used.
 | `phone` | string | Mobile number. |
 | `verified` | boolean | From the carrier record or approved by an operator. |
 | `source` | string | 'tms', or 'approved:<operator id>'. |
+| `email_undeliverable_at_ms` | integer or null | When mail to this address bounced for good; it is not emailed again. |
 
 ## Freight
 
@@ -579,9 +580,11 @@ Each evidence kind has exactly these payload fields, all required. See
 | `inbound.late` | `inbound_id`: str, `chase_state`: str |
 | `inbound.received` | `inbound_id`: str, `channel`: Channel, `from`: str, `subject`: str, `body_sha256`: str, `attachments`: str[] |
 | `inbound.unmatched` | `inbound_id`: str, `from`: str, `channel`: Channel |
+| `inbound.unrouted` | `from`: str, `to`: str[], `external_id`: str |
 | `load.delivered` | `delivered_at_ms`: int |
 | `load.ready_to_invoice` | `at_ms`: int |
 | `load.received` | `load_number`: str, `carrier_id`: str, `delivery_appt_ms`: int, `delivered_at_ms`: int? |
+| `message.bounced` | `outbox_id`: str, `email`: str, `kind`: str, `permanent`: bool, `detail`: str |
 | `message.cancelled` | `outbox_id`: str, `reason`: str |
 | `message.deferred` | `outbox_id`: str, `reason`: str, `until_ms`: int |
 | `message.duplicate` | `outbox_id`: str, `provider_id`: str |

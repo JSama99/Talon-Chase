@@ -123,6 +123,10 @@
     "source": {
       "@id": "urn:talonsight:talon-chase:source"
     },
+    "email_undeliverable_at_ms": {
+      "@id": "urn:talonsight:talon-chase:email_undeliverable_at_ms",
+      "@type": "xsd:integer"
+    },
     "address": {
       "@id": "urn:talonsight:talon-chase:address"
     },

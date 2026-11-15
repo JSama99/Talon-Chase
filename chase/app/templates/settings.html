@@ -1,5 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}Settings{% if bounced %}
+<section class="section" aria-labelledby="bounced-title">
+  <h2 class="label" id="bounced-title">Email addresses that stopped working</h2>
+  <p class="muted">Mail to these bounced for good, so they are no longer used. Ask the carrier for a new address and update it in your system.</p>
+  <table class="table">
+    <thead><tr><th>Address</th><th>Carrier</th><th class="right">Bounced</th></tr></thead>
+    <tbody>
+    {% for b in bounced %}
+      <tr><td>{{ b.contact.email }}</td><td>{{ b.carrier }}</td><td class="right muted">{{ b.when }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
 {% block main %}
 <h1 class="title-xl">Settings</h1>
 
@@ -120,4 +134,18 @@
   <p class="muted">No contacts with a phone number yet.</p>
   {% endif %}
 </section>
+{% if bounced %}
+<section class="section" aria-labelledby="bounced-title">
+  <h2 class="label" id="bounced-title">Email addresses that stopped working</h2>
+  <p class="muted">Mail to these bounced for good, so they are no longer used. Ask the carrier for a new address and update it in your system.</p>
+  <table class="table">
+    <thead><tr><th>Address</th><th>Carrier</th><th class="right">Bounced</th></tr></thead>
+    <tbody>
+    {% for b in bounced %}
+      <tr><td>{{ b.contact.email }}</td><td>{{ b.carrier }}</td><td class="right muted">{{ b.when }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endblock %}

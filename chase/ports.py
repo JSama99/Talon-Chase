@@ -35,6 +35,9 @@ class EmailMessage:
     idempotency_key: str = ""
     # Stable Message-ID header, so a repeated delivery is recognisably the same email.
     message_id: str = ""
+    # False when an earlier try may already have reached the provider. A provider
+    # without idempotency keys should check before sending again.
+    first_try: bool = True
 
 
 @dataclass(frozen=True)

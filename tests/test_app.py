@@ -540,7 +540,7 @@ def test_every_code_has_words():
 def test_every_load_evidence_kind_is_told_or_deliberately_quiet():
     broker_only = {
         "inbound.unmatched", "contact.approved", "consent.recorded", "outbound.switch",
-        "config.changed", "operator.saved", "operator.signed_in",
+        "config.changed", "operator.saved", "operator.signed_in", "inbound.unrouted",
     }  # fmt: skip
     on_loads = set(EVENT_PAYLOADS) - broker_only
     assert on_loads == timeline.TOLD | timeline.QUIET

@@ -201,6 +201,13 @@ def _message_deferred(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
     return Entry(e.at_ms, "Waiting to send", e.payload["reason"].replace("_", " "))
 
 
+def _bounced(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
+    if e.payload["permanent"]:
+        title = f"Email to {e.payload['email']} bounced; that address will not be used again"
+        return Entry(e.at_ms, title, e.payload["detail"], "bad")
+    return Entry(e.at_ms, f"Email to {e.payload['email']} was delayed", e.payload["detail"])
+
+
 def _blocked(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
     return Entry(e.at_ms, "Messages are off; nothing was sent", tone="bad")
 
@@ -232,6 +239,7 @@ _TELL: dict[str, Teller] = {
     "message.failed": _message_failed,
     "message.cancelled": _message_cancelled,
     "message.deferred": _message_deferred,
+    "message.bounced": _bounced,
     "outbound.blocked": _blocked,
     "outbound.refused": _refused,
 }

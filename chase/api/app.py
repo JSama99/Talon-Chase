@@ -205,6 +205,8 @@ def create_app(
     *,
     login_from: str = "Talon Chase <signin@talonchase.invalid>",
     secure_cookies: bool | None = None,
+    postmark_webhook_user: str = "",
+    postmark_webhook_password: str = "",
 ) -> FastAPI:
     if len(api_key) < 16:
         raise ValueError("the API key must be at least 16 characters")
@@ -555,7 +557,10 @@ def create_app(
             run(engine.set_global_outbound, body.enabled, by=body.by)
         return {"enabled": body.enabled, "scope": body.broker_id or "global"}
 
+    from chase.api.postmark_hooks import mount_postmark
     from chase.app.views import mount_broker_app
+
+    mount_postmark(app, engine, run, user=postmark_webhook_user, password=postmark_webhook_password)
 
     mount_broker_app(
         app,

@@ -346,6 +346,9 @@ class Contact:
     phone: str = f("Mobile number.", default="")
     verified: bool = f("From the carrier record or approved by an operator.", default=True)
     source: str = f("'tms', or 'approved:<operator id>'.", default="tms")
+    email_undeliverable_at_ms: int | None = f(
+        "When mail to this address bounced for good; it is not emailed again.", default=None
+    )
 
 
 # -------------------------------------------------------------------- Freight

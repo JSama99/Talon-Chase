@@ -674,6 +674,18 @@ def mount_broker_app(
                 }
             )
         texting.sort(key=lambda r: (r["carrier"].lower(), r["contact"].name.lower()))
+        bounced = sorted(
+            (
+                {
+                    "contact": c,
+                    "carrier": carriers[c.carrier_id].name,
+                    "when": when(c.email_undeliverable_at_ms, broker),
+                }
+                for c in store.find(Contact)
+                if c.carrier_id in carriers and c.email_undeliverable_at_ms is not None
+            ),
+            key=lambda r: (r["carrier"].lower(), r["contact"].email),
+        )
         people = sorted(
             store.find(Operator, broker_id=broker_id),
             key=lambda o: (not o.active, o.role is not OperatorRole.OWNER, o.name.lower()),
@@ -691,6 +703,7 @@ def mount_broker_app(
             waiting=summary["messages_waiting"],
             people=people,
             texting=texting,
+            bounced=bounced,
             zones=_zones(broker.config.timezone),
         )
 

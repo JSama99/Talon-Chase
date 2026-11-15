@@ -28,7 +28,7 @@ after rejecting floats and non-string keys.
 | --- | --- | --- |
 | `chain_id` | string | The load id. Two other chains exist: `broker:<id>` and `system` |
 | `seq` | integer | Position in the chain, starting at 0, no gaps |
-| `kind` | string | What happened, for example `attempt.sent` |
+| `kind` | string | What happened, for example `attempt.queued` |
 | `at_ms` | integer | When, in epoch milliseconds |
 | `payload` | object | Details of the event |
 | `payload_digest` | string | Lowercase hex SHA-256 of canonical JSON of `payload` |
@@ -70,12 +70,12 @@ payload_digest fa58f84698a3fb2378f895bd16f841fbc6110c68cc6e8737e6c339e0d37e4993
 hash           9e3999afeee8c1fe54c07fa76346810b4596d458e87787da81096f3d56542474
 ```
 
-Event 1: `kind` `attempt.sent`, `at_ms` `1700000060000`,
+Event 1: `kind` `attempt.queued`, `at_ms` `1700000060000`,
 payload `{"step":"FIRST_EMAIL","to":["dispatch@carrier.example"]}`
 
 ```
 payload_digest 8939bba25b95e1a741f9a0de4768bcd5150cb0d5d5ffe813db88634adf99379d
-hash           362649f3bed3bc084d558b246b09f118b5ba84f710220c2d4c68b2bc2a9ebbd8
+hash           e416250130e9984385f335a43fc2ef0965c46aa6d2c0db8ef4582714b2b51a8b
 ```
 
 ## Event kinds
@@ -84,14 +84,15 @@ hash           362649f3bed3bc084d558b246b09f118b5ba84f710220c2d4c68b2bc2a9ebbd8
 | --- | --- |
 | `load.received`, `load.delivered`, `load.ready_to_invoice` | Load arrives, is marked delivered, has a filed POD |
 | `chase.opened`, `chase.state`, `chase.rescheduled`, `chase.closed` | Chase lifecycle; `chase.state` carries `from` and `to` |
-| `attempt.sent` | A message went out: step, channel, recipients, subject, SHA-256 of the body |
-| `send.failed`, `sms.skipped`, `outbound.blocked`, `outbound.refused` | A send did not happen, and why |
+| `attempt.queued` | The agent decided to ask: step, channel, recipients, subject, SHA-256 of the body, outbox id |
+| `message.sent`, `message.retry`, `message.deferred`, `message.cancelled`, `message.failed`, `message.reclaimed`, `message.duplicate` | What happened to that message in the outbox; see [OUTBOX.md](OUTBOX.md) |
+| `sms.skipped`, `outbound.blocked`, `outbound.refused` | A request was not made, and why |
 | `inbound.received`, `inbound.classified`, `inbound.held`, `inbound.late` | A reply arrived and what was done with it |
 | `document.received`, `document.rerouted` | A file arrived: its SHA-256, name and type |
 | `check.completed` | Result and reasons for one document |
-| `writeback.succeeded`, `writeback.failed`, `writeback.fallback` | Filing attempts, with adapter and receipt |
+| `writeback.pending`, `writeback.succeeded`, `writeback.failed`, `writeback.fallback` | Filing attempts, with adapter and receipt; `pending` while the packet email is in the outbox |
 | `escalation.opened`, `escalation.acknowledged` | Handed to a person; taken by a named person |
-| `contact.approved`, `sms.stopped`, `outbound.switch` | On the broker or system chain |
+| `inbound.unmatched`, `contact.approved`, `sms.stopped`, `outbound.switch` | On the broker or system chain; `inbound.unmatched` is a message that could not be tied to a load |
 
 Message bodies and file contents are not in the chain. Their SHA-256 hashes are, so a
 stored message or document can be shown to be the one the chain refers to.

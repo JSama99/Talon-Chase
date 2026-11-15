@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import dataclasses
 import hmac
 import threading
@@ -31,12 +32,15 @@ from chase.domain.models import (
     Escalation,
     Inbound,
     Load,
+    OutboxMessage,
+    OutboxStatus,
     Role,
     WriteBack,
 )
 from chase.domain.states import ACTIVE_STATES
 from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
+from chase.outbox import OutboxDispatcher
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_INBOUND_BYTES = 25 * 1024 * 1024
@@ -179,6 +183,14 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
     app = FastAPI(title="Talon Chase", version="0.1.0")
     lock = threading.Lock()
     store = engine.store
+
+    @contextlib.contextmanager
+    def locked():
+        with lock, store.transaction():
+            yield
+
+    # Claims and completions take the lock; the provider call in between does not.
+    dispatcher = OutboxDispatcher(engine, guard=locked)
 
     def admin(x_api_key: str = Header(default="")) -> None:
         if not hmac.compare_digest(x_api_key.encode(), api_key.encode()):
@@ -347,7 +359,17 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
 
     @app.post("/v1/tick", dependencies=[Depends(admin)])
     def tick() -> dict:
-        return {"steps": run(engine.tick)}
+        """Call every minute or two: do what is due, deliver it, finish what that unblocks."""
+        steps = run(engine.tick)
+        report = dispatcher.dispatch()
+        if report.changed:
+            steps += run(engine.tick)
+        return {"steps": steps, "dispatch": report.to_dict()}
+
+    @app.post("/v1/dispatch", dependencies=[Depends(admin)])
+    def dispatch() -> dict:
+        """Deliver due outbox messages only."""
+        return dispatcher.dispatch().to_dict()
 
     # ---------------------------------------------------------------- carriers
 
@@ -413,6 +435,11 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
                 "by_state": dict(sorted(by_state.items())),
                 "in_progress": sum(1 for c in chases if c.state in ACTIVE_STATES),
                 "needs_a_person": len(open_escalations),
+                "messages_waiting": sum(
+                    1
+                    for m in store.find(OutboxMessage, broker_id=broker_id)
+                    if m.status in (OutboxStatus.PENDING, OutboxStatus.SENDING)
+                ),
                 "filed": len(filed),
                 "median_ms_to_filed": hours[len(hours) // 2] if hours else None,
             }
@@ -466,6 +493,12 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
                 "checks": plain(store.find(Check, chase_id=cid)),
                 "escalations": plain(store.find(Escalation, load_id=load_id)),
                 "writebacks": plain(store.find(WriteBack, chase_id=cid)),
+                "messages": plain(
+                    sorted(
+                        store.find(OutboxMessage, load_id=load_id),
+                        key=lambda m: (m.created_at_ms, m.id),
+                    )
+                ),
             }
 
         return run(build)

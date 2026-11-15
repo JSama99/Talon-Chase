@@ -28,6 +28,7 @@ from chase.domain.models import (
 )
 from chase.domain.schedule import to_local
 from chase.engine import ChaseEngine
+from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.memory import MemoryStore
 from chase.writeback.adapters import FakeApiAdapter
@@ -98,14 +99,25 @@ def main() -> None:
             subject=f"Re: proof of delivery for load {number}", body=body,
             attachments=[("pod.pdf", attachment)] if attachment else [],
         )  # fmt: skip
+        settle()
+
+    outbox = OutboxDispatcher(engine)
+
+    def settle() -> None:
+        """What a scheduler does: deliver queued messages, let the engine react."""
+        for _ in range(10):
+            if not outbox.dispatch().changed and not engine.tick():
+                return
 
     def advance(duration_ms: int) -> None:
         end = clock.now_ms() + duration_ms
         while clock.now_ms() < end:
             clock.advance(15 * MINUTE_MS)
             engine.tick()
+            settle()
 
     engine.tick()
+    settle()
     advance(40 * MINUTE_MS)
     reply("TC-300001", "Attached.", stand_in_pod(loads["TC-300001"]))
     reply("TC-300002", "Here.", stand_in_pod(loads["TC-300002"], signature_present=False))
@@ -130,8 +142,10 @@ def main() -> None:
             when = to_local(event.at_ms, TZ).strftime("%a %H:%M")
             note = ""
             p = event.payload
-            if event.kind == "attempt.sent":
+            if event.kind == "attempt.queued":
                 note = f"{p['step']} by {p['channel']}"
+            elif event.kind == "message.sent":
+                note = f"{p['channel']} to {', '.join(p['to'])}"
             elif event.kind == "chase.state":
                 note = f"{p['from']} -> {p['to']}"
             elif event.kind == "check.completed":

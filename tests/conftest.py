@@ -23,6 +23,7 @@ from chase.domain.models import (
     Role,
 )
 from chase.engine import ChaseEngine
+from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.memory import MemoryStore
 from chase.writeback.adapters import FakeApiAdapter
@@ -55,12 +56,18 @@ def pod(load: Load, **overrides) -> bytes:
 
 
 class World:
-    def __init__(self, store=None, start: int = START, carrier_tz: str = TZ) -> None:
+    def __init__(
+        self,
+        store=None,
+        start: int = START,
+        carrier_tz: str = TZ,
+        honors_idempotency: bool = True,
+    ) -> None:
         self.store = store or MemoryStore()
         self.clock = FakeClock(start)
         self.ids = SequentialIds()
-        self.email = FakeEmail()
-        self.sms = FakeSms()
+        self.email = FakeEmail(honors_idempotency)
+        self.sms = FakeSms(honors_idempotency)
         self.tms = FakeApiAdapter()
         self.engine = ChaseEngine(
             store=self.store,
@@ -73,6 +80,7 @@ class World:
             adapters=[self.tms],
             secret=b"test-secret",
         )
+        self.outbox = OutboxDispatcher(self.engine)
         self.broker = Broker(
             id="brk-1",
             name="Peachtree Logistics",
@@ -116,11 +124,25 @@ class World:
         self.engine.intake_load(load)
         return load
 
+    def tick(self) -> int:
+        """What the scheduler does every few minutes: engine tick, then deliver."""
+        steps = self.engine.tick()
+        self.settle()
+        return steps
+
+    def settle(self) -> None:
+        """Deliver what is queued and let the engine react, at the current time."""
+        for _ in range(10):
+            report = self.outbox.dispatch()
+            steps = self.engine.tick()
+            if not report.changed and not steps:
+                return
+
     def chase(self, load: Load) -> Chase:
         return self.store.find(Chase, load_id=load.id)[0]
 
     def reply(self, load: Load, body: str = "", attachments=None, sender: str | None = None):
-        return self.engine.handle_inbound(
+        inbound = self.inbound(
             broker_id="brk-1",
             channel=Channel.EMAIL,
             from_addr=sender or self.dispatcher.email,
@@ -128,6 +150,13 @@ class World:
             body=body,
             attachments=attachments or [],
         )
+        return inbound
+
+    def inbound(self, **kwargs):
+        """A carrier message arrives, then whatever it triggers is delivered."""
+        inbound = self.engine.handle_inbound(**kwargs)
+        self.settle()
+        return self.store.get(type(inbound), inbound.id)
 
     def send_pod(self, load: Load, **overrides):
         return self.reply(load, "Attached.", [("pod.pdf", pod(load, **overrides))])
@@ -137,10 +166,20 @@ class World:
         end = self.clock.now_ms() + duration_ms
         while self.clock.now_ms() < end:
             self.clock.advance(min(step_ms, end - self.clock.now_ms()))
-            self.engine.tick()
+            self.tick()
 
     def escalations(self, load: Load) -> list[Escalation]:
         return sorted(self.store.find(Escalation, load_id=load.id), key=lambda e: e.id)
+
+    def messages(self, load: Load | None = None):
+        from chase.domain.models import OutboxMessage
+
+        found = (
+            self.store.find(OutboxMessage, load_id=load.id)
+            if load
+            else self.store.find(OutboxMessage)
+        )
+        return sorted(found, key=lambda m: (m.created_at_ms, m.id))
 
     def carrier_emails(self):
         """Emails sent to anyone other than the broker's own rep alone."""

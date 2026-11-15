@@ -84,7 +84,7 @@ def test_engine_runs_the_same_on_sql(store):
     world = World(store=store)
     load = world.make_load()
     other = world.make_load()
-    world.engine.tick()
+    world.tick()
     world.send_pod(load)
     world.reply(other, "bank details changed", [("pod.pdf", pod(other))])
     world.run(3 * HOUR_MS)
@@ -98,7 +98,7 @@ def test_engine_runs_the_same_on_sql(store):
 def test_sql_and_memory_produce_identical_evidence(store):
     def scenario(world: World) -> dict[str, str]:
         loads = [world.make_load() for _ in range(3)]
-        world.engine.tick()
+        world.tick()
         world.send_pod(loads[0])
         world.send_pod(loads[1], signature_present=False)
         world.run(4 * 24 * HOUR_MS, step_ms=HOUR_MS)

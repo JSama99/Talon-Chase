@@ -70,6 +70,7 @@ class EscalationReason(StrEnum):
     NO_CONTACT = "NO_CONTACT"
     REASK_LIMIT = "REASK_LIMIT"
     OUTBOUND_BLOCKED = "OUTBOUND_BLOCKED"
+    SEND_FAILED = "SEND_FAILED"
 
 
 class InboundStatus(StrEnum):
@@ -77,6 +78,19 @@ class InboundStatus(StrEnum):
     PROCESSED = "PROCESSED"
     HELD = "HELD"
     UNMATCHED = "UNMATCHED"
+
+
+class OutboxStatus(StrEnum):
+    PENDING = "PENDING"  # waiting to be sent, or waiting to be retried
+    SENDING = "SENDING"  # claimed by a dispatcher until lease_until_ms
+    SENT = "SENT"
+    FAILED = "FAILED"  # gave up; a person was told
+    CANCELLED = "CANCELLED"  # no longer needed, never sent
+
+
+class OutboxPurpose(StrEnum):
+    CARRIER_REQUEST = "CARRIER_REQUEST"  # asks a carrier for paperwork
+    PACKET = "PACKET"  # a ready-to-file packet for the broker
 
 
 class WriteBackStatus(StrEnum):
@@ -107,6 +121,11 @@ class BrokerConfig:
         default_factory=lambda: [MINUTE_MS, 5 * MINUTE_MS, 15 * MINUTE_MS]
     )
     upload_link_ttl_ms: int = 14 * 24 * HOUR_MS
+    send_retry_backoff_ms: list[int] = field(
+        default_factory=lambda: [
+            MINUTE_MS, 5 * MINUTE_MS, 15 * MINUTE_MS, HOUR_MS, 4 * HOUR_MS
+        ]
+    )  # fmt: skip
 
 
 @dataclass
@@ -196,16 +215,16 @@ class Chase:
 
 @dataclass
 class Attempt:
+    """A request the agent decided to make. Its delivery lives in the outbox message."""
+
     id: str
     chase_id: str
     step: Step
     channel: Channel
     to: list[str]
     cc: list[str]
-    subject: str
-    body: str
-    sent_at_ms: int
-    provider_id: str = ""
+    queued_at_ms: int
+    outbox_id: str = ""
 
 
 @dataclass
@@ -283,7 +302,39 @@ class WriteBack:
     completed_at_ms: int | None = None
 
 
+@dataclass
+class OutboxMessage:
+    """One email or text to deliver. Written in the same transaction as the decision
+    to send it; delivered afterwards by the dispatcher, at least once."""
+
+    id: str
+    broker_id: str
+    load_id: str
+    chase_id: str
+    purpose: OutboxPurpose
+    channel: Channel
+    idempotency_key: str
+    from_addr: str
+    to: list[str]
+    created_at_ms: int
+    next_attempt_at_ms: int
+    cc: list[str] = field(default_factory=list)
+    subject: str = ""
+    body: str = ""
+    attachments: list[Attachment] = field(default_factory=list)
+    quiet_tz: str = ""  # carrier time zone; empty means no quiet hours (broker's own inbox)
+    status: OutboxStatus = OutboxStatus.PENDING
+    tries: int = 0
+    claim_token: str = ""
+    lease_until_ms: int = 0
+    last_error: str = ""
+    provider_id: str = ""
+    sent_at_ms: int | None = None
+    finished_at_ms: int | None = None
+    deferred_noted: bool = False
+
+
 ENTITY_TYPES = (
     Broker, Carrier, Contact, Load, Requirement, Chase, Attempt, Inbound,
-    Document, Check, Escalation, WriteBack,
+    Document, Check, Escalation, WriteBack, OutboxMessage,
 )  # fmt: skip

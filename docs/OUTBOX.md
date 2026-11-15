@@ -19,6 +19,7 @@ not at all. Sending happens only after the commit succeeds.
 | The dispatcher dies before calling the provider | The lease expires after 5 minutes; another run sends it. Sent once. |
 | The dispatcher dies after the provider accepted, before recording it | The lease expires; the message is sent again **with the same idempotency key and Message-ID**. |
 | Two dispatchers run at once | Each message is claimed by one of them. Tested with four on Postgres. |
+| A batch takes longer than the lease | No effect: each message is claimed, and its lease started, just before its own provider call. |
 
 Delivery is **at least once**. The only duplicate risk is the fourth row, and its
 window is the time between the provider's reply and one database commit. A provider
@@ -38,11 +39,13 @@ PENDING ──claim──> SENDING ──provider ok──> SENT
    │
    ├──kill switch off──> stays PENDING, untouched
    ├──carrier quiet hours──> stays PENDING until 07:00 carrier time
-   └──chase no longer asking (document arrived, escalated)──> CANCELLED
+   ├──chase no longer asking (document arrived, escalated)──> CANCELLED
+   └──text recipient sent STOP or lost consent──> CANCELLED
 ```
 
-The checks in the bottom half run at claim time, so they use the state at the moment
-of sending, not at the moment of deciding:
+The checks in the bottom half run at claim time, and messages are claimed one at a
+time, right before their own provider call. So they use the state at the moment of
+sending each message, not at the moment of deciding, and not at the start of a batch:
 
 - **Kill switch.** Queued messages are held, not dropped. They go out when it is
   turned back on, unless one of the other checks stops them.
@@ -51,6 +54,11 @@ of sending, not at the moment of deciding:
 - **Still needed.** A request for paperwork is cancelled if the chase is no longer
   asking: the document came through the upload link, or the load went to a person.
   Packets to the broker are never cancelled this way.
+- **Still allowed to text.** A queued text is cancelled if no verified contact with
+  that number still has consent on file, for example after the driver replied STOP.
+
+The one gap left: a change that lands *during* a single provider call (the switch is
+turned off while one email is being handed over) cannot stop that one message.
 
 ## Filing through the emailed packet
 
@@ -85,6 +93,6 @@ then `message.sent`, `message.retry`, `message.deferred`, `message.cancelled`,
 - **Due messages are found by status, then filtered in Python.** Fine at pilot volume;
   add an index on `(status, next_attempt_at_ms)` and push the time filter into SQL
   before thousands of messages are pending at once.
-- **One lease length.** Five minutes. A provider call that takes longer than that
-  would let a second dispatcher send the same message; real provider calls should
-  time out well under it.
+- **One lease length.** Five minutes, per message. A single provider call that takes
+  longer than that would let a second dispatcher send the same message; real
+  provider calls should time out well under it.

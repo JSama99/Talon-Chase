@@ -15,7 +15,7 @@ in-memory stand-ins. See [What is not built](#what-is-not-built).
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                          # 143 pass, 3 skipped without Postgres; 151 with it
+pytest                          # 156 pass, 3 skipped without Postgres; 164 with it
 python -m chase.demo            # five loads, end to end, with evidence exports
 python -m synthetic.evaluate    # 200 loads, 60 document fixtures, pass/fail report
 python tools/verify_evidence.py out/demo/evidence-TC-300002.json

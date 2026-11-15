@@ -5,13 +5,18 @@ writes an ``OutboxMessage`` in the same database transaction as the decision, so
 message exists if and only if the decision was committed. ``OutboxDispatcher``
 delivers those messages afterwards, outside the engine's transaction:
 
-1. **Claim** (one short transaction). Pick due messages. Hold them while the kill
-   switch is off; cancel a carrier request whose chase no longer needs it; push a
-   message out of the carrier's quiet hours; otherwise mark it SENDING with a lease.
+1. **Claim** (one short transaction). Take the next due message. Hold it while the
+   kill switch is off; cancel it if its chase no longer needs it or, for a text, if
+   the recipient opted out or lost consent; push it out of the carrier's quiet hours;
+   otherwise mark it SENDING with a lease.
 2. **Send** (no transaction, no lock held). Call the provider with the message's
    idempotency key and a stable Message-ID.
 3. **Complete** (one short transaction). Record SENT, or schedule a retry, or give up
    after the broker's backoff list runs out and hand the load to a person.
+
+Messages are claimed **one at a time**, right before their own provider call. Every
+check in step 1 therefore sees the state at that moment, even late in a long batch,
+and a lease starts only when its message is about to be sent.
 
 Delivery is at least once. If a dispatcher dies after the provider accepted a
 message and before step 3 commits, the lease expires and the message is sent again
@@ -24,7 +29,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from chase.domain.models import (
@@ -34,12 +39,15 @@ from chase.domain.models import (
     Channel,
     Chase,
     ChaseState,
+    Contact,
     EscalationReason,
+    Load,
     OutboxMessage,
     OutboxPurpose,
     OutboxStatus,
     Step,
 )
+from chase.domain.risk import normalize_phone
 from chase.domain.schedule import in_quiet_hours, next_allowed
 from chase.domain.states import ACTIVE_STATES
 from chase.evidence import sha256_hex
@@ -110,8 +118,13 @@ class DispatchReport:
     failed: int = 0
     cancelled: int = 0
     deferred: int = 0
-    held: int = 0
     duplicates: int = 0
+    held_ids: set[str] = field(default_factory=set)
+
+    @property
+    def held(self) -> int:
+        """Messages left waiting because outbound is switched off, counted once each."""
+        return len(self.held_ids)
 
     @property
     def changed(self) -> int:
@@ -159,26 +172,36 @@ class OutboxDispatcher:
     # ------------------------------------------------------------------ public
 
     def dispatch(self) -> DispatchReport:
-        """Claim what is due, send it, record the results."""
+        """Deliver up to ``batch`` due messages, claiming each one just before sending it."""
         report = DispatchReport()
-        for message in self.claim(report):
-            outcome = self._send(message)
+        for _ in range(self.batch):
+            claimed = self.claim(report, limit=1)
+            if not claimed:
+                break
+            outcome = self._send(claimed[0])
             with self.guard():
-                self.complete(message, outcome, report)
+                self.complete(claimed[0], outcome, report)
         return report
 
-    def claim(self, report: DispatchReport | None = None) -> list[OutboxMessage]:
-        """Step 1. Returns copies of the messages this call now holds a lease on."""
+    def claim(
+        self, report: DispatchReport | None = None, limit: int | None = None
+    ) -> list[OutboxMessage]:
+        """Step 1. Returns copies of the messages this call now holds a lease on.
+
+        ``dispatch`` claims one at a time. A larger ``limit`` is for tests and tools;
+        anything claimed that way should be sent promptly, before its lease runs out.
+        """
         report = report or DispatchReport()
+        limit = self.batch if limit is None else limit
         claimed: list[OutboxMessage] = []
         with self.guard():
             now = self.clock.now_ms()
             for message in self._due(now):
-                if len(claimed) >= self.batch:
+                if len(claimed) >= limit:
                     break
                 broker = self.store.get(Broker, message.broker_id)
                 if broker is None or not self.engine._outbound_enabled(broker):
-                    report.held += 1
+                    report.held_ids.add(message.id)
                     continue
                 stale = self._stale_reason(message)
                 if stale:
@@ -310,7 +333,7 @@ class OutboxDispatcher:
         return sorted(pending + expired, key=lambda m: (m.next_attempt_at_ms, m.id))
 
     def _stale_reason(self, message: OutboxMessage) -> str:
-        """A request for paperwork is pointless once the chase stopped asking."""
+        """Why a carrier request must not go out now, or an empty string."""
         if message.purpose is not OutboxPurpose.CARRIER_REQUEST:
             return ""
         chase = self.store.get(Chase, message.chase_id)
@@ -318,7 +341,22 @@ class OutboxDispatcher:
             return "chase not found"
         if chase.state is not ChaseState.ASKED:
             return f"chase is {chase.state.value}"
+        if message.channel is Channel.SMS and not self._may_text(message):
+            return "recipient opted out or has no consent on file"
         return ""
+
+    def _may_text(self, message: OutboxMessage) -> bool:
+        """Consent is checked again at send time: a STOP or a contact sync may have
+        landed after the text was queued."""
+        load = self.store.get(Load, message.load_id)
+        if load is None or not message.to:
+            return False
+        phone = normalize_phone(message.to[0])
+        return any(
+            c.verified and c.sms_consent and not c.sms_stopped
+            for c in self.store.find(Contact, carrier_id=load.carrier_id)
+            if c.phone and normalize_phone(c.phone) == phone
+        )
 
     def _cancel(self, message: OutboxMessage, reason: str, now: int) -> None:
         message.status = OutboxStatus.CANCELLED

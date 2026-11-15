@@ -777,9 +777,14 @@ class ChaseEngine:
             self._log_check(chase, document, outcome)
             results.append((document, extraction, outcome))
         self._apply(chase, [(d, o) for d, _, o in results], cfg)
+        # Documents that belong to another load are judged together per target load, so
+        # a damage note on one of them is never outvoted by a clean copy in the same reply.
+        by_target: dict[str, list[tuple[Document, Extraction]]] = {}
         for document, extraction, outcome in results:
             if outcome.result is CheckResult.REROUTE:
-                self._reroute(load, outcome.reroute_load_id, document, extraction, inbound, sender)
+                by_target.setdefault(outcome.reroute_load_id, []).append((document, extraction))
+        for target_id, documents in by_target.items():
+            self._reroute(load, target_id, documents, inbound, sender)
 
     def _log_check(self, chase: Chase, document: Document, outcome: CheckOutcome) -> None:
         check = Check(
@@ -853,20 +858,46 @@ class ChaseEngine:
         self,
         source: Load,
         target_load_id: str,
-        document: Document,
-        extraction: Extraction,
+        documents: list[tuple[Document, Extraction]],
         inbound: Inbound,
         sender: Contact | None,
     ) -> None:
-        """A document sent for one load that belongs to another open load of the same carrier."""
+        """Documents sent for one load that belong to another open load of the same carrier.
+        All of them are checked first; the target's next state follows from all results."""
         target = self._need(Load, target_load_id)
         chases = self.store.find(Chase, load_id=target.id)
-        self._record(
-            source.id,
-            "document.rerouted",
-            {"document_id": document.id, "sha256": document.content_sha256, "to_load": target.id},
-        )
+        for document, _ in documents:
+            self._record(
+                source.id,
+                "document.rerouted",
+                {
+                    "document_id": document.id,
+                    "sha256": document.content_sha256,
+                    "to_load": target.id,
+                },
+            )
+        copies = [
+            (
+                self._store_document(
+                    target,
+                    inbound,
+                    Attachment(document.filename, document.content_sha256),
+                    {"rerouted_from_load": source.id},
+                )[0],
+                extraction,
+            )
+            for document, extraction in documents
+        ]
         if not chases or chases[0].state not in ACCEPTS_DOCUMENTS:
+            # Kept on the target load for a person to see; its chase is not reopened.
+            self._record(
+                target.id,
+                "inbound.late",
+                {
+                    "inbound_id": inbound.id,
+                    "chase_state": chases[0].state if chases else "NONE",
+                },
+            )
             return
         chase = chases[0]
         broker = self._need(Broker, chase.broker_id)
@@ -874,15 +905,12 @@ class ChaseEngine:
             chase.reply_to_contact_id = sender.id
         self._move(chase, ChaseState.RECEIVED)
         self._move(chase, ChaseState.CHECKING)
-        copy, _ = self._store_document(
-            target,
-            inbound,
-            Attachment(document.filename, document.content_sha256),
-            {"rerouted_from_load": source.id},
-        )
-        outcome = check_document(extraction, target, [], broker.config)
-        self._log_check(chase, copy, outcome)
-        self._apply(chase, [(copy, outcome)], broker.config)
+        outcomes = []
+        for copy, extraction in copies:
+            outcome = check_document(extraction, target, [], broker.config)
+            self._log_check(chase, copy, outcome)
+            outcomes.append((copy, outcome))
+        self._apply(chase, outcomes, broker.config)
         self._drain(chase.id)
 
     # ---------------------------------------------------------------- write-back

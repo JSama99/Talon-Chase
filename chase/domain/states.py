@@ -12,7 +12,9 @@ ALLOWED: dict[ChaseState, frozenset[ChaseState]] = {
     S.ASKED: frozenset({S.RECEIVED, S.ESCALATED}),
     S.RECEIVED: frozenset({S.CHECKING, S.ESCALATED}),
     S.CHECKING: frozenset({S.PASSED, S.FAILED_CHECK, S.ESCALATED}),
-    S.FAILED_CHECK: frozenset({S.ASKED, S.ESCALATED}),
+    # FAILED_CHECK -> RECEIVED: a corrected document arrives before the re-ask is sent
+    # (quiet hours, kill switch, provider down).
+    S.FAILED_CHECK: frozenset({S.ASKED, S.RECEIVED, S.ESCALATED}),
     S.PASSED: frozenset({S.FILED, S.ESCALATED}),
     S.FILED: frozenset({S.CLOSED}),
     # Only a person's acknowledgement closes an escalated chase.
@@ -21,7 +23,7 @@ ALLOWED: dict[ChaseState, frozenset[ChaseState]] = {
 }
 
 ACTIVE_STATES = frozenset(s for s in S if s not in (S.CLOSED, S.ESCALATED))
-ACCEPTS_DOCUMENTS = frozenset({S.OPEN, S.ASKED})
+ACCEPTS_DOCUMENTS = frozenset({S.OPEN, S.ASKED, S.FAILED_CHECK})
 
 
 class IllegalTransition(Exception):

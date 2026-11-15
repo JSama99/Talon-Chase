@@ -17,9 +17,10 @@ from chase.store.sql import METADATA, SqlStore
 from tests.conftest import World, check_worlds
 
 URL = os.environ.get("CHASE_TEST_POSTGRES_URL")
-pytestmark = pytest.mark.skipif(not URL, reason="CHASE_TEST_POSTGRES_URL is not set")
+needs_postgres = pytest.mark.skipif(not URL, reason="CHASE_TEST_POSTGRES_URL is not set")
 
 
+@needs_postgres
 def test_migration_matches_models_and_runs_the_engine(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", URL)
     engine = sa.create_engine(URL)
@@ -47,6 +48,7 @@ def test_migration_matches_models_and_runs_the_engine(monkeypatch):
         engine.dispose()
 
 
+@needs_postgres
 def test_outbox_migration_keeps_sent_history_and_reverses(monkeypatch):
     """A database with attempts sent before the outbox existed upgrades without loss."""
     monkeypatch.setenv("DATABASE_URL", URL)
@@ -129,6 +131,7 @@ def test_outbox_migration_keeps_sent_history_and_reverses(monkeypatch):
         engine.dispose()
 
 
+@needs_postgres
 def test_ontology_migration_carries_every_value_over_and_back(monkeypatch):
     """0003 turns flat fields into parties, consent history, operators, resolutions
     and requirement status, and ``downgrade`` restores the old columns exactly."""
@@ -290,3 +293,24 @@ def test_ontology_migration_carries_every_value_over_and_back(monkeypatch):
             for table in ("alembic_version", "outbox_message", "party", "consent", "operator"):
                 conn.execute(sa.text(f'DROP TABLE IF EXISTS "{table}"'))
         engine.dispose()
+
+
+def test_migrations_run_up_and_down_on_sqlite(tmp_path, monkeypatch):
+    """SQLite cannot alter a column in place; the migrations use batch operations so
+    ``alembic upgrade head`` works there too. Runs without Postgres."""
+    url = f"sqlite:///{tmp_path / 'chase.db'}"
+    monkeypatch.setenv("DATABASE_URL", url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "head")
+    command.check(config)
+    world = World(store=SqlStore(url))
+    load = world.make_load()
+    world.tick()
+    world.send_pod(load)
+    assert world.chase(load).state is ChaseState.CLOSED
+    check_worlds()
+    world.store.engine.dispose()
+    command.downgrade(config, "base")
+    engine = sa.create_engine(url)
+    assert sa.inspect(engine).get_table_names() == ["alembic_version"]
+    engine.dispose()

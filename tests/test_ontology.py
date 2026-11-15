@@ -245,6 +245,12 @@ def _break_tc18(s):
     )  # fmt: skip
 
 
+def _break_tc21(s):
+    owner = s.get(m.Operator, "op-jermaine")
+    s.put(dataclasses.replace(owner, email="j@peachtree.example"))
+    s.put(dataclasses.replace(owner, id="op-twin", email="J@peachtree.example"))
+
+
 def _break_tc19(s):
     s.put(Load("load-ghost", "brk-1", "car-1", "TC-999", 1))
 
@@ -270,6 +276,7 @@ CORRUPTIONS = {
     "TC-18": _break_tc18,
     "TC-19": _break_tc19,
     "TC-20": lambda s: _change(s, _request(s), body=_request(s).body + " for Acme Foods"),
+    "TC-21": _break_tc21,
 }
 
 

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ load.load_number }}{% endblock %}
+{% block main %}
+<header class="load-head">
+  <div>
+    {% if escalation %}<a class="back" href="/app/b/{{ broker.id }}">← Needs you</a>
+    {% else %}<a class="back" href="/app/b/{{ broker.id }}/chases">← All chases</a>{% endif %}
+    <h1 class="load-number">{{ load.load_number }}</h1>
+    <p class="sub">{{ carrier.name }} · {{ carrier.mc_number }}{% if delivered %} · delivered {{ delivered }}{% endif %}</p>
+  </div>
+  {% if escalation %}
+    <span class="badge {% if reason in wording.URGENT_REASONS %}red{% endif %}">Needs you: {{ wording.REASON_BADGES[reason] }}</span>
+  {% elif ready %}
+    <span class="badge green">Ready to invoice</span>
+  {% else %}
+    <span class="badge plain">{{ state_word }}</span>
+  {% endif %}
+</header>
+
+<div class="columns">
+  <section aria-labelledby="happened">
+    <h2 class="label" id="happened">What happened</h2>
+    <ol class="story">
+      {% for item in entries %}
+      <li>
+        <span class="story-when">{{ item.when }}</span>
+        <span>
+          <span class="story-title {{ item.entry.tone }}">{{ item.entry.title }}</span>
+          {% if item.entry.detail %}<br><span class="story-detail">{{ item.entry.detail }}</span>{% endif %}
+        </span>
+      </li>
+      {% else %}
+      <li><span class="muted">Nothing yet.</span></li>
+      {% endfor %}
+    </ol>
+
+    {% if documents %}
+    <h2 class="label spaced">Documents</h2>
+    <ul class="docs">
+      {% for d in documents %}
+      <li>
+        <a href="/app/b/{{ broker.id }}/documents/{{ d.doc.id }}">{{ d.doc.filename }}</a>
+        <span class="muted"> · {{ d.when }}{% if d.check %} · {% if d.check.result.value == "PASS" %}good{% else %}{% for r in d.check.reasons %}{{ wording.check_reason(r) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <aside class="panel" aria-label="Your call">
+    {% if escalation %}
+      <h2 class="label">Your call</h2>
+      <p class="muted">{{ title_line }}</p>
+      <p class="call">{{ wording.REASON_ADVICE[reason] }}</p>
+      {% for p in phones %}<a class="call-phone" href="{{ p|tel }}">{{ p|phone }}</a>{% endfor %}
+
+      {% if held %}
+      <div class="held">
+        <span class="label">Held message</span>
+        <strong>{{ held.from_addr }}</strong>
+        {% if held.subject %}<span>{{ held.subject }}</span>{% endif %}
+        {% if held.body %}<pre>{{ held.body[:600] }}</pre>{% endif %}
+        {% for a in held.attachments %}
+          <a href="/app/b/{{ broker.id }}/messages/{{ held.id }}/files/{{ loop.index0 }}">{{ a.filename }}</a>
+        {% endfor %}
+      </div>
+      {% if reason.value == "UNKNOWN_SENDER" %}
+      <form method="post" action="/app/b/{{ broker.id }}/messages/{{ held.id }}/approve-sender" class="panel">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="role">Add {{ held.from_addr }} to {{ carrier.name }} as</label>
+        <select id="role" name="role">
+          <option value="DISPATCHER">Dispatcher</option>
+          <option value="DRIVER">Driver</option>
+        </select>
+        <button class="button ghost" type="submit">Approve this address</button>
+      </form>
+      {% endif %}
+      {% endif %}
+
+      <form method="post" action="/app/b/{{ broker.id }}/escalations/{{ escalation.id }}/resolve" class="panel">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <fieldset class="choices">
+          <legend class="label">What happened</legend>
+          {% for r in resolutions %}
+          <label class="choice">
+            <input type="radio" name="resolution" value="{{ r.value }}" {% if loop.first %}checked{% endif %}>
+            <span>{{ wording.RESOLUTIONS[r] }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+        <label class="visually-hidden" for="note">Note</label>
+        <textarea id="note" name="note" placeholder="Note (needed for Something else)"></textarea>
+        <button class="button wide" type="submit">I have this one</button>
+        <span class="muted">Recorded as {{ operator.name }}.</span>
+      </form>
+      <hr class="sep">
+    {% endif %}
+
+    <h2 class="label">The load</h2>
+    <dl class="facts">
+      <dt>Status</dt><dd>{{ wording.REQUIREMENT_WORDS[requirement.status] if requirement else "No POD needed yet" }}</dd>
+      {% for p in parties %}
+      <dt>{{ p.role.value|capitalize }}</dt><dd>{{ p.name }}{% if p.address %}<br><span class="muted">{{ p.address }}</span>{% endif %}</dd>
+      {% endfor %}
+      {% if chase %}<dt>Requests sent</dt><dd>{{ chase.attempts_sent }}</dd>{% endif %}
+      {% for e in past %}
+      <dt>Settled</dt><dd>{{ operators.get(e.acknowledged_by, e.acknowledged_by) }}: {{ wording.RESOLUTIONS[e.resolution]|lower }}{% if e.note %} — {{ e.note }}{% endif %}</dd>
+      {% endfor %}
+    </dl>
+    <span class="muted">Customer and consignee are never shown to the carrier.</span>
+
+    <hr class="sep">
+    <h2 class="label">Evidence record</h2>
+    <span class="verified"><span class="dot {% if not verified %}red{% endif %}" aria-hidden="true"></span>{{ events }} events, {% if verified %}chain verifies{% else %}chain does NOT verify{% endif %}</span>
+    {% if head %}<span class="mono muted">head {{ head[:20] }}…{{ head[-8:] }}</span>{% endif %}
+    <a href="/app/b/{{ broker.id }}/loads/{{ load.id }}/evidence.json">Export evidence</a>
+  </aside>
+</div>
+{% endblock %}

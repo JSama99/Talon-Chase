@@ -132,6 +132,9 @@ EVENT_PAYLOADS: dict[str, dict[str, str]] = {
         "inbound_id": "str",
     },
     "contact.approved": {"contact_id": "str", "carrier_id": "str", "by": "str"},
+    "config.changed": {"by": "str", "fields": "str[]"},
+    "operator.saved": {"operator_id": "str", "role": "OperatorRole", "active": "bool", "by": "str"},
+    "operator.signed_in": {"operator_id": "str"},
     "outbound.switch": {"enabled": "bool", "by": "str"},
 }
 

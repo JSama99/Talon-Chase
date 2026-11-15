@@ -81,7 +81,7 @@ Each has a test in `tests/test_acceptance.py`.
 11. **Every step is evidence.** Each send, reply, document, check, state change and
     write-back appends to a per-load hash chain. See [docs/EVIDENCE.md](docs/EVIDENCE.md).
 12. **Records obey the ontology.** Every record and evidence payload is checked against a
-    closed schema when it is saved, and 20 cross-record rules (TC-01 to TC-20) hold after
+    closed schema when it is saved, and 21 cross-record rules (TC-01 to TC-21) hold after
     every test and in the synthetic run. See [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ## Layout
@@ -100,6 +100,7 @@ chase/
   writeback/   FakeApiAdapter (TMS API stand-in), PacketEmailAdapter (works with any TMS)
   store/       MemoryStore, SqlStore (SQLite and Postgres)
   api/         FastAPI service
+  app/         broker screens: sign-in, templates, timeline wording, preview
   demo.py      five-load walkthrough
 synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
 migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
@@ -150,6 +151,38 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 
 Every `by` is an operator id. An unknown, inactive or other-broker operator gets 403.
 
+## Broker screens
+
+Served at `/app` by the same service. Three screens, designed in Paper and built to
+match: **Needs you** (what a person must decide, oldest first, with tap-to-call),
+**Load** (what happened, in plain words, with the resolve controls and the evidence
+record) and **Settings** (the off switch, the schedule, people, and who may be
+texted). Plus **All chases** for looking something up. See [docs/UI.md](docs/UI.md).
+
+- **Sign-in** is an emailed link, tied to an operator record: no passwords. A link
+  works once, for 15 minutes, and asks for a button press so mail scanners cannot
+  spend it. The session is a signed cookie (12 hours, `HttpOnly`, `SameSite=Lax`,
+  `Secure` over https) and every form carries a CSRF token. A turned-off operator is
+  signed out on their next click.
+- **Roles.** Anyone at the broker can resolve escalations, approve a new address,
+  record consent and **stop** messages. Only an owner can start messages again,
+  change settings or manage people. A broker always keeps one active owner.
+  TalonSight's platform operators can open any broker.
+- **No JavaScript.** Every page is server-rendered and works with scripts off; the
+  content security policy forbids them.
+
+First sign-in for a new broker: add the owner, then print them a link.
+
+```bash
+curl -X PUT $URL/v1/operators/op-owner -H "X-API-Key: $CHASE_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"id":"op-owner","broker_id":"brk-1","name":"Jermaine","role":"OWNER","email":"j@broker.example"}'
+python -m chase.app.link op-owner        # or let them use "Email me a link"
+```
+
+`python -m chase.app.preview` renders every screen with a believable morning of
+work to `out/screens/`, for review without running the service.
+
 ## Synthetic evaluation
 
 `python -m synthetic.evaluate` runs the engine over a seeded pack and exits non-zero
@@ -177,8 +210,9 @@ real PODs. That needs labelled documents from a pilot broker.
 
 - **Real channels.** No mailbox, text line, language model or TMS integration. Each
   needs its own adapter behind the existing interface.
-- **User accounts.** There is one admin key. A broker-facing screen needs sign-in and
-  per-broker access before anyone outside uses it.
+- **Sign-in email delivery.** Sign-in links go through the same email port as
+  everything else, which is still the in-memory stand-in: until the mailbox adapter
+  exists, use `python -m chase.app.link` to hand out links.
 - **Document storage.** Files are stored in the database by content hash. Move them to
   object storage before real volume.
 - **Public holidays.** The schedule knows weekends and quiet hours, not holidays.
@@ -189,6 +223,6 @@ real PODs. That needs labelled documents from a pilot broker.
 ## Next steps
 
 1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
-2. Build the broker screens from [docs/UI.md](docs/UI.md), with sign-in.
-3. Then, one at a time: mailbox adapter (passing the outbox's idempotency key to the
-   provider), document reader with labelled PODs, first TMS adapter.
+2. One at a time: mailbox adapter (passing the outbox's idempotency key to the
+   provider; it also delivers sign-in links), document reader with labelled PODs,
+   first TMS adapter.

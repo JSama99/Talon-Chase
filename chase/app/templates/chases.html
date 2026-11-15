@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}All chases{% endblock %}
+{% block main %}
+<h1 class="title-xl">All chases</h1>
+<ul class="tabs" aria-label="Filter by state">
+  <li><a href="/app/b/{{ broker.id }}/chases" {% if not state %}aria-current="page"{% endif %}>All {{ total }}</a></li>
+  {% for value, label, n in states %}
+  <li><a href="/app/b/{{ broker.id }}/chases?state={{ value }}" {% if state == value %}aria-current="page"{% endif %}>{{ label }} {{ n }}</a></li>
+  {% endfor %}
+</ul>
+{% if rows %}
+<table class="table">
+  <thead><tr><th>Load</th><th>Carrier</th><th>State</th><th class="right">Requests</th><th class="right">Started</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/app/b/{{ broker.id }}/loads/{{ r.load.id }}"><strong>{{ r.load.load_number }}</strong></a></td>
+      <td>{{ r.carrier }}</td>
+      <td>{{ r.state }}</td>
+      <td class="right">{{ r.attempts }}</td>
+      <td class="right muted">{{ r.opened }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No chases{% if state %} in this state{% endif %} yet.</p>
+{% endif %}
+{% endblock %}

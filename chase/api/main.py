@@ -8,7 +8,8 @@ Environment:
   DATABASE_URL    SQLAlchemy URL (postgresql+psycopg://... or sqlite+pysqlite:///chase.db)
   CHASE_API_KEY   admin key, at least 16 characters
   CHASE_SECRET    signs upload links, at least 32 characters
-  CHASE_BASE_URL  public address used in upload links
+  CHASE_BASE_URL  public address used in upload and sign-in links
+  CHASE_LOGIN_FROM  sender of sign-in emails
 """
 
 from __future__ import annotations
@@ -43,7 +44,11 @@ def build_app():
         secret=secret.encode(),
         base_url=os.environ.get("CHASE_BASE_URL", "http://localhost:8000"),
     )
-    return create_app(engine, os.environ.get("CHASE_API_KEY", ""))
+    return create_app(
+        engine,
+        os.environ.get("CHASE_API_KEY", ""),
+        login_from=os.environ.get("CHASE_LOGIN_FROM", "Talon Chase <signin@talonchase.invalid>"),
+    )
 
 
 app = build_app() if os.environ.get("CHASE_SECRET") else None

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Needs you{% endblock %}
+{% block main %}
+{% if not summary.outbound_enabled or not summary.global_outbound_enabled %}
+<div class="banner" role="status">
+  <div>
+    <strong>Messages to carriers are off.</strong>
+    <div class="muted">{{ summary.messages_waiting }} waiting to send once they are back on.{% if not summary.global_outbound_enabled %} Turned off by TalonSight for everyone.{% endif %}</div>
+  </div>
+  <a class="button ghost small" href="/app/b/{{ broker.id }}/settings">Settings</a>
+</div>
+{% endif %}
+
+<header class="head">
+  <div class="head-count">
+    <span class="big-number">{{ rows|length }}</span>
+    <div class="head-text">
+      <h1 class="head-title">{% if rows|length == 1 %}load needs you{% else %}loads need you{% endif %}</h1>
+      {% if rows %}<span class="muted">Oldest has waited {{ oldest }}</span>{% endif %}
+    </div>
+  </div>
+  <dl class="stats">
+    <div class="stat"><dt class="label">In progress</dt><dd>{{ summary.in_progress }}</dd></div>
+    <div class="stat"><dt class="label">Filed</dt><dd>{{ summary.filed }}</dd></div>
+    <div class="stat"><dt class="label">Median to filed</dt><dd>{{ median }}</dd></div>
+  </dl>
+</header>
+
+{% if rows %}
+<ul class="queue">
+  {% for row in rows %}
+  <li>
+    <a class="row" href="/app/b/{{ broker.id }}/loads/{{ row.load_id }}">
+      <span class="bar {% if row.urgent %}red{% endif %}" aria-hidden="true"></span>
+      <span class="row-load">{{ row.load_number }}</span>
+      <span class="row-body">
+        <span class="row-title">{% if row.urgent %}<span class="visually-hidden">Urgent: </span>{% endif %}{{ row.title }}</span>
+        <span class="row-detail">{{ row.summary }}</span>
+      </span>
+      <span class="row-wait">{{ row.waited }}</span>
+      <span class="row-phone">{{ row.phone|phone }}</span>
+      <span class="row-go" aria-hidden="true">→</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty">
+  <strong>Nothing needs you.</strong>
+  <span class="muted">Every load is either being chased or done. Check back later.</span>
+</div>
+{% endif %}
+
+{% if unmatched %}
+<section class="unmatched" aria-label="Messages with no load">
+  <p class="label">{{ unmatched|length }} message{% if unmatched|length != 1 %}s{% endif %} with no load</p>
+  {% for u in unmatched %}
+  <div class="unmatched-row">
+    <span class="unmatched-from">{{ u["from"] }}</span>
+    <span class="unmatched-subject">{{ u.subject or "(no subject)" }}</span>
+    <span class="unmatched-when">{{ u.when }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

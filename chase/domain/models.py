@@ -242,6 +242,10 @@ class BrokerConfig:
         default_factory=lambda: [MINUTE_MS, 5 * MINUTE_MS, 15 * MINUTE_MS],
     )
     upload_link_ttl_ms: int = f("How long an upload link stays valid.", default=14 * 24 * HOUR_MS)
+    timezone: str = f(
+        "IANA time zone the broker works in; the broker screens show times in it.",
+        default="America/New_York",
+    )
     send_retry_backoff_ms: list[int] = f(
         "Waits between delivery retries; when it runs out, the message fails.",
         default_factory=lambda: [

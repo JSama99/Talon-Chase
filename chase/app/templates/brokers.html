@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Brokers{% endblock %}
+{% block main %}
+<h1 class="title-xl">Brokers</h1>
+<ul class="queue">
+  {% for b in brokers %}
+  <li><a class="row" href="/app/b/{{ b.id }}"><span class="row-body"><span class="row-title">{{ b.name }}</span><span class="row-detail">{{ "Messages on" if b.outbound_enabled else "Messages off" }}</span></span><span class="row-go" aria-hidden="true">→</span></a></li>
+  {% else %}
+  <li class="row muted">No brokers yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

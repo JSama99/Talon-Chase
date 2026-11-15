@@ -22,7 +22,6 @@ from pydantic import BaseModel, Field
 from chase.domain.models import (
     Attempt,
     Broker,
-    BrokerConfig,
     Carrier,
     Channel,
     Chase,
@@ -37,14 +36,12 @@ from chase.domain.models import (
     Operator,
     OperatorRole,
     OutboxMessage,
-    OutboxStatus,
     Party,
     PartyRole,
     Requirement,
     Role,
     WriteBack,
 )
-from chase.domain.states import ACTIVE_STATES
 from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
 from chase.evidence import canonical_json, sha256_hex
@@ -202,7 +199,13 @@ send.onclick = async () => {
 </script></body></html>"""
 
 
-def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
+def create_app(
+    engine: ChaseEngine,
+    api_key: str,
+    *,
+    login_from: str = "Talon Chase <signin@talonchase.invalid>",
+    secure_cookies: bool | None = None,
+) -> FastAPI:
     if len(api_key) < 16:
         raise ValueError("the API key must be at least 16 characters")
     app = FastAPI(title="Talon Chase", version="0.1.0")
@@ -276,33 +279,8 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
 
     @app.patch("/v1/brokers/{broker_id}/config", dependencies=[Depends(admin)])
     def patch_config(broker_id: str, changes: dict[str, Any]) -> dict:
-        def save():
-            broker = need(Broker, broker_id)
-            allowed = {f.name: f for f in dataclasses.fields(BrokerConfig)}
-            for key, value in changes.items():
-                if key not in allowed:
-                    raise ValueError(f"unknown setting: {key}")
-                current = getattr(broker.config, key)
-                ok = (
-                    isinstance(value, list)
-                    and all(
-                        isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in value
-                    )
-                    if isinstance(current, list)
-                    else isinstance(value, int) and not isinstance(value, bool) and value >= 0
-                )
-                if not ok:
-                    raise ValueError(f"{key} must be a non-negative integer (or list of them)")
-                setattr(broker.config, key, value)
-            cfg = broker.config
-            if not (0 <= cfg.quiet_end_hour <= cfg.morning_hour < cfg.quiet_start_hour <= 23):
-                raise ValueError("hours must satisfy quiet_end <= morning < quiet_start <= 23")
-            if not 0 <= cfg.confidence_floor <= 100:
-                raise ValueError("confidence_floor must be between 0 and 100")
-            store.put(broker)
-            return broker.config
-
-        return plain(run(save))
+        need(Broker, broker_id)
+        return plain(run(engine.update_broker_config, broker_id, changes))
 
     @app.put("/v1/carriers/{carrier_id}", dependencies=[Depends(admin)])
     def put_carrier(carrier_id: str, body: CarrierIn) -> dict:
@@ -357,17 +335,7 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
     def put_operator(operator_id: str, body: OperatorIn) -> dict:
         if body.id != operator_id:
             raise HTTPException(422, "id in the path and body differ")
-        if (body.role is OperatorRole.PLATFORM) == bool(body.broker_id):
-            raise HTTPException(422, "a platform operator has no broker; everyone else has one")
-
-        def save():
-            if body.broker_id:
-                need(Broker, body.broker_id)
-            operator = Operator(**body.model_dump())
-            store.put(operator)
-            return operator
-
-        return plain(run(save))
+        return plain(run(engine.save_operator, Operator(**body.model_dump())))
 
     @app.post("/v1/contacts/approve", dependencies=[Depends(admin)])
     def approve_contact(body: ApproveContactIn) -> dict:
@@ -502,37 +470,7 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
 
     @app.get("/v1/brokers/{broker_id}/summary", dependencies=[Depends(admin)])
     def summary(broker_id: str) -> dict:
-        def build():
-            broker = need(Broker, broker_id)
-            chases = store.find(Chase, broker_id=broker_id)
-            by_state: dict[str, int] = {}
-            for chase in chases:
-                by_state[chase.state.value] = by_state.get(chase.state.value, 0) + 1
-            filed = [c for c in chases if c.closed_reason == "filed" and c.closed_at_ms]
-            hours = sorted((c.closed_at_ms - c.opened_at_ms) for c in filed)
-            open_escalations = [
-                e
-                for e in store.find(Escalation, broker_id=broker_id)
-                if e.acknowledged_at_ms is None
-            ]
-            return {
-                "broker_id": broker_id,
-                "outbound_enabled": broker.outbound_enabled,
-                "global_outbound_enabled": store.get_setting("outbound_enabled", "1") == "1",
-                "chases": len(chases),
-                "by_state": dict(sorted(by_state.items())),
-                "in_progress": sum(1 for c in chases if c.state in ACTIVE_STATES),
-                "needs_a_person": len(open_escalations),
-                "messages_waiting": sum(
-                    1
-                    for m in store.find(OutboxMessage, broker_id=broker_id)
-                    if m.status in (OutboxStatus.PENDING, OutboxStatus.SENDING)
-                ),
-                "filed": len(filed),
-                "median_ms_to_filed": hours[len(hours) // 2] if hours else None,
-            }
-
-        return run(build)
+        return run(engine.summary, broker_id)
 
     @app.get("/v1/brokers/{broker_id}/chases", dependencies=[Depends(admin)])
     def chases(broker_id: str, state: str | None = None) -> list[dict]:
@@ -616,5 +554,17 @@ def create_app(engine: ChaseEngine, api_key: str) -> FastAPI:
         else:
             run(engine.set_global_outbound, body.enabled, by=body.by)
         return {"enabled": body.enabled, "scope": body.broker_id or "global"}
+
+    from chase.app.views import mount_broker_app
+
+    mount_broker_app(
+        app,
+        engine,
+        run,
+        login_from=login_from,
+        secure_cookies=(
+            engine.base_url.startswith("https://") if secure_cookies is None else secure_cookies
+        ),
+    )
 
     return app

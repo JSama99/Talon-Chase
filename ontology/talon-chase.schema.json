@@ -194,6 +194,7 @@
         "confidence_floor",
         "writeback_retry_backoff_ms",
         "upload_link_ttl_ms",
+        "timezone",
         "send_retry_backoff_ms"
       ],
       "properties": {
@@ -279,6 +280,10 @@
           "description": "How long an upload link stays valid.",
           "type": "integer",
           "minimum": 0
+        },
+        "timezone": {
+          "description": "IANA time zone the broker works in; the broker screens show times in it.",
+          "type": "string"
         },
         "send_retry_backoff_ms": {
           "description": "Waits between delivery retries; when it runs out, the message fails.",
@@ -893,6 +898,7 @@
             "chase.rescheduled",
             "chase.state",
             "check.completed",
+            "config.changed",
             "consent.recorded",
             "contact.approved",
             "document.received",
@@ -914,6 +920,8 @@
             "message.reclaimed",
             "message.retry",
             "message.sent",
+            "operator.saved",
+            "operator.signed_in",
             "outbound.blocked",
             "outbound.refused",
             "outbound.switch",
@@ -1045,6 +1053,22 @@
             "properties": {
               "payload": {
                 "$ref": "#/$defs/payload.check.completed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "config.changed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.config.changed"
               }
             }
           }
@@ -1381,6 +1405,38 @@
             "properties": {
               "payload": {
                 "$ref": "#/$defs/payload.message.sent"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "operator.saved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.operator.saved"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "operator.signed_in"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.operator.signed_in"
               }
             }
           }
@@ -2459,6 +2515,26 @@
         }
       }
     },
+    "payload.config.changed": {
+      "type": "object",
+      "title": "config.changed payload",
+      "additionalProperties": false,
+      "required": [
+        "by",
+        "fields"
+      ],
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "payload.consent.recorded": {
       "type": "object",
       "title": "consent.recorded payload",
@@ -2950,6 +3026,44 @@
         "try": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "payload.operator.saved": {
+      "type": "object",
+      "title": "operator.saved payload",
+      "additionalProperties": false,
+      "required": [
+        "operator_id",
+        "role",
+        "active",
+        "by"
+      ],
+      "properties": {
+        "operator_id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/OperatorRole"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "by": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.operator.signed_in": {
+      "type": "object",
+      "title": "operator.signed_in payload",
+      "additionalProperties": false,
+      "required": [
+        "operator_id"
+      ],
+      "properties": {
+        "operator_id": {
+          "type": "string"
         }
       }
     },

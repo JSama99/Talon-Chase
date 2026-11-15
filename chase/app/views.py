@@ -34,7 +34,6 @@ from chase.app.auth import (
 )
 from chase.app.timeline import tell
 from chase.domain.models import (
-    HOUR_MS,
     Attempt,
     Broker,
     Carrier,
@@ -687,7 +686,7 @@ def mount_broker_app(
             operator,
             page="settings",
             cfg=broker.config,
-            hours=lambda ms: ms // HOUR_MS,
+            hours=wording.hours,
             global_on=summary["global_outbound_enabled"],
             waiting=summary["messages_waiting"],
             people=people,
@@ -708,23 +707,27 @@ def mount_broker_app(
 
     @app.post("/app/b/{broker_id}/settings/schedule")
     async def save_schedule(request: Request, broker_id: str):
-        operator, _ = for_broker(request, broker_id)
+        operator, broker = for_broker(request, broker_id)
         data = await form(request)
         path = f"/app/b/{broker_id}/settings"
+        cfg = broker.config
+        # Send only what the person changed. A value set more precisely elsewhere
+        # (say 30 minutes through the API) is shown as 0.5 hours and, if left
+        # alone, never rewritten.
+        changes: dict[str, Any] = {}
         try:
-            changes = {
-                "sms_delay_ms": int(data["sms_delay_hours"]) * HOUR_MS,
-                "third_attempt_ms": int(data["third_attempt_hours"]) * HOUR_MS,
-                "escalate_wait_ms": int(data["escalate_wait_hours"]) * HOUR_MS,
-                "morning_hour": int(data["morning_hour"]),
-                "quiet_start_hour": int(data["quiet_start_hour"]),
-                "quiet_end_hour": int(data["quiet_end_hour"]),
-                "confidence_floor": int(data["confidence_floor"]),
-                "max_reasks": int(data["max_reasks"]),
-                "timezone": data["timezone"],
-            }
+            for name, setting in _HOUR_FIELDS.items():
+                if data[name].strip() != wording.hours(getattr(cfg, setting)):
+                    changes[setting] = wording.hours_to_ms(data[name])
+            for name in _WHOLE_FIELDS:
+                if int(data[name]) != getattr(cfg, name):
+                    changes[name] = int(data[name])
+            if data["timezone"] != cfg.timezone:
+                changes["timezone"] = data["timezone"]
         except (KeyError, ValueError):
-            return back(path, "Every setting needs a whole number.", error=True)
+            return back(path, "Every setting needs a number.", error=True)
+        if not changes:
+            return back(path, "Nothing changed.")
         try:
             attempt(engine.update_broker_config, broker_id, changes, by=operator.id)
         except Problem as exc:
@@ -819,6 +822,19 @@ def mount_broker_app(
         )
         return back(path, "Texts are on." if granted else "Texts are off.")
 
+
+_HOUR_FIELDS = {
+    "sms_delay_hours": "sms_delay_ms",
+    "third_attempt_hours": "third_attempt_ms",
+    "escalate_wait_hours": "escalate_wait_ms",
+}
+_WHOLE_FIELDS = (
+    "morning_hour",
+    "quiet_start_hour",
+    "quiet_end_hour",
+    "confidence_floor",
+    "max_reasks",
+)
 
 _SOURCE_WORDS = {
     ConsentSource.RATE_CONFIRMATION: "Rate confirmation",

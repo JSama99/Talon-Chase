@@ -31,7 +31,6 @@ QUIET = frozenset(
         "chase.state",  # the lines around it say what changed
         "chase.rescheduled",  # planning, not something that happened
         "inbound.classified",  # folded into how the reply is described
-        "message.sent",  # the "asked" line is the send
         "message.retry",  # retried until sent or failed; both are told
         "message.reclaimed",
         "message.duplicate",
@@ -63,12 +62,31 @@ def _opened(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
     return Entry(e.at_ms, "Started asking for the POD")
 
 
-def _attempt(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
-    step = Step(e.payload["step"])
+def _asked(at_ms: int, attempt: dict[str, Any]) -> Entry:
+    step = Step(attempt["step"])
     title = _STEP_WORDS.get(step, "Asked the carrier")
-    if step in (Step.SECOND,) and e.payload["channel"] == "SMS":
+    if step is Step.SECOND and attempt["channel"] == "SMS":
         title = "Texted the dispatcher"
-    return Entry(e.at_ms, title, ", ".join(e.payload["to"]))
+    return Entry(at_ms, title, ", ".join(attempt["to"]))
+
+
+def _attempt(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry | None:
+    """A decided request. It is told when the provider accepts it (``message.sent``);
+    until then it reads as waiting, so nothing looks sent that was not."""
+    if e.payload["outbox_id"] in ctx["_delivered"]:
+        ctx["_attempts"][e.payload["outbox_id"]] = e.payload
+        return None
+    asked = _asked(e.at_ms, e.payload)
+    first, rest = asked.title.split(" ", 1)
+    verb = {"Asked": "ask", "Texted": "text"}.get(first, first.lower())
+    return Entry(e.at_ms, f"Waiting to send: {verb} {rest}", asked.detail)
+
+
+def _sent(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry | None:
+    attempt = ctx["_attempts"].pop(e.payload["outbox_id"], None)
+    if attempt is None:
+        return None  # not a carrier request (a filing packet); its filing line says it
+    return _asked(e.at_ms, attempt)
 
 
 def _sms_skipped(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
@@ -198,6 +216,7 @@ _TELL: dict[str, Teller] = {
     "chase.opened": _opened,
     "chase.closed": _closed,
     "attempt.queued": _attempt,
+    "message.sent": _sent,
     "sms.skipped": _sms_skipped,
     "inbound.received": _inbound,
     "inbound.held": _held,
@@ -222,7 +241,9 @@ TOLD = frozenset(_TELL)
 
 def tell(events: list[EvidenceEvent], ctx: dict[str, Any] | None = None) -> list[Entry]:
     """The story of one load, oldest first."""
-    ctx = ctx or {}
+    ctx = dict(ctx or {})
+    ctx["_delivered"] = {e.payload["outbox_id"] for e in events if e.kind == "message.sent"}
+    ctx["_attempts"] = {}
     entries: list[Entry] = []
     for event in events:
         teller = _TELL.get(event.kind)
@@ -244,13 +265,12 @@ def tell(events: list[EvidenceEvent], ctx: dict[str, Any] | None = None) -> list
         ):
             previous.kinds.append(event.kind)
             continue
-        # "Checked: not signed" then a re-ask at the same moment reads as one line.
+        # "Checked: not signed" then a re-ask sent at the same moment reads as one line.
         if (
             previous
-            and event.kind == "attempt.queued"
-            and event.payload["step"] == Step.REASK
+            and entry.title == _STEP_WORDS[Step.REASK]
             and "check.completed" in previous.kinds
-            and previous.at_ms == event.at_ms
+            and previous.at_ms == entry.at_ms
         ):
             previous.title += ", asked again"
             previous.kinds.append(event.kind)

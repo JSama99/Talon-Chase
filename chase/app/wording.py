@@ -136,6 +136,24 @@ def short_duration(ms: int | None) -> str:
     return f"{round(ms / DAY_MS)} d"
 
 
+def hours(ms: int) -> str:
+    """A duration as hours for a form field: 3, 0.5, 1.25. Exact to the minute."""
+    minutes = ms // MINUTE_MS
+    whole, rest = divmod(minutes, 60)
+    if rest == 0:
+        return str(whole)
+    return f"{minutes / 60:.4f}".rstrip("0").rstrip(".")
+
+
+def hours_to_ms(text: str) -> int:
+    """Hours typed into a form, kept to the minute. Raises ValueError if not a
+    non-negative number."""
+    value = float(text.strip())
+    if not value >= 0 or value == float("inf"):
+        raise ValueError(text)
+    return round(value * 60) * MINUTE_MS
+
+
 def _clock(dt: datetime) -> str:
     hour = dt.hour % 12 or 12
     return f"{hour}:{dt.minute:02d} {'am' if dt.hour < 12 else 'pm'}"

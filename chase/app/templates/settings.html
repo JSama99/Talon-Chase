@@ -33,13 +33,13 @@
   <section class="section" aria-labelledby="when">
     <h2 class="label" id="when">When to ask</h2>
     <div class="setting"><label for="sms">Text the driver after</label>
-      <span class="setting-value"><input id="sms" type="number" min="0" max="72" name="sms_delay_hours" value="{{ hours(cfg.sms_delay_ms) }}"> hours</span></div>
+      <span class="setting-value"><input id="sms" type="number" step="any" min="0" max="72" name="sms_delay_hours" value="{{ hours(cfg.sms_delay_ms) }}"> hours</span></div>
     <div class="setting"><label for="morning">Second request</label>
       <span class="setting-value"><input id="morning" type="number" min="0" max="23" name="morning_hour" value="{{ cfg.morning_hour }}">:00 next business day</span></div>
     <div class="setting"><label for="third">Third request, copying you, after</label>
-      <span class="setting-value"><input id="third" type="number" min="1" max="240" name="third_attempt_hours" value="{{ hours(cfg.third_attempt_ms) }}"> hours</span></div>
+      <span class="setting-value"><input id="third" type="number" step="any" min="1" max="240" name="third_attempt_hours" value="{{ hours(cfg.third_attempt_ms) }}"> hours</span></div>
     <div class="setting"><label for="esc">Hand to you after a further</label>
-      <span class="setting-value"><input id="esc" type="number" min="1" max="240" name="escalate_wait_hours" value="{{ hours(cfg.escalate_wait_ms) }}"> hours</span></div>
+      <span class="setting-value"><input id="esc" type="number" step="any" min="1" max="240" name="escalate_wait_hours" value="{{ hours(cfg.escalate_wait_ms) }}"> hours</span></div>
     <div class="setting"><span><label for="qs">Quiet hours</label><br><span class="muted">In the carrier's local time. Nothing is sent.</span></span>
       <span class="setting-value"><input id="qs" type="number" min="0" max="23" name="quiet_start_hour" value="{{ cfg.quiet_start_hour }}">:00 to
         <label class="visually-hidden" for="qe">Quiet hours end</label><input id="qe" type="number" min="0" max="23" name="quiet_end_hour" value="{{ cfg.quiet_end_hour }}">:00</span></div>

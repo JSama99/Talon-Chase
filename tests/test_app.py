@@ -597,3 +597,57 @@ def test_the_preview_renders_every_screen(tmp_path):
     load = (tmp_path / "load.html").read_text()
     assert "Receiver wrote “2 cartons damaged”" in load and "pod.pdf" in load
     assert not re.search(r"[0-9a-f]{40}", load.split("head ")[0])  # no hashes in the story
+
+
+# --- PR #4 review -----------------------------------------------------------------
+
+
+def test_the_story_says_asked_only_once_a_message_is_delivered():
+    """Codex: a queued request must not read as sent, and a late delivery shows the
+    time it went out, not when it was queued."""
+    world = World()
+    load = world.make_load()
+    world.engine.tick()  # decided and queued...
+    world.engine.set_broker_outbound("brk-1", False, by="op-jermaine")
+    world.outbox.dispatch()  # ...then held by the off switch before delivery
+    told = timeline.tell(world.store.evidence(load.id))
+    titles = [e.title for e in told]
+    assert not any(t.startswith("Asked") for t in titles), titles
+    waiting = next(e for e in told if e.title.startswith("Waiting to send"))
+    assert "dispatcher by email" in waiting.title
+
+    world.clock.advance(2 * HOUR_MS)
+    world.engine.set_broker_outbound("brk-1", True, by="op-jermaine")
+    world.settle()
+    told = timeline.tell(world.store.evidence(load.id))
+    asked = [e for e in told if e.title == "Asked the dispatcher by email"]
+    assert len(asked) == 1 and asked[0].at_ms == world.clock.now_ms()
+    assert not any(e.title.startswith("Waiting to send") for e in told)
+
+
+def test_saving_settings_keeps_sub_hour_values_it_did_not_change(app_world):
+    """Codex: a 30-minute delay set through the API survives an unrelated save."""
+    world, client, _ = app_world
+    world.engine.update_broker_config("brk-1", {"sms_delay_ms": 30 * MINUTE_MS})
+    sign_in(world, client)
+    page = client.get("/app/b/brk-1/settings").text
+    shown = re.search(r'name="sms_delay_hours" value="([^"]+)"', page).group(1)
+    assert shown == "0.5"
+    form = {
+        k: re.search(rf'name="{k}" value="([^"]+)"', page).group(1)
+        for k in (
+            "sms_delay_hours", "third_attempt_hours", "escalate_wait_hours", "morning_hour",
+            "quiet_start_hour", "quiet_end_hour", "confidence_floor", "max_reasks",
+        )
+    }  # fmt: skip
+    form |= {"timezone": "America/Chicago", "csrf": csrf(client, "/app/b/brk-1/settings")}
+    client.post("/app/b/brk-1/settings/schedule", data=form)
+    cfg = world.store.get(Broker, "brk-1").config
+    assert cfg.timezone == "America/Chicago" and cfg.sms_delay_ms == 30 * MINUTE_MS
+    change = [e for e in world.store.evidence("broker:brk-1") if e.kind == "config.changed"][-1]
+    assert change.payload["fields"] == ["timezone"]
+
+    # A fractional value typed in is kept to the minute.
+    form |= {"sms_delay_hours": "1.25"}
+    client.post("/app/b/brk-1/settings/schedule", data=form)
+    assert world.store.get(Broker, "brk-1").config.sms_delay_ms == 75 * MINUTE_MS

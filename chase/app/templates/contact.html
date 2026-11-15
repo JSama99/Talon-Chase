@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ contact.name or "Contact" }}{% endblock %}
+{% block main %}
+<div>
+  <a class="back" href="/app/b/{{ broker.id }}/settings">← Settings</a>
+  <h1 class="load-number">{{ contact.name or contact.role.value|capitalize }}</h1>
+  <p class="sub">{{ carrier.name }} · {{ contact.role.value|capitalize }} · {{ contact.phone|phone }}</p>
+</div>
+
+<div class="columns">
+  <section aria-labelledby="hist">
+    <h2 class="label" id="hist">Text consent, newest first</h2>
+    <ol class="story">
+      {% for h in history %}
+      <li>
+        <span class="story-when">{{ h.when }}</span>
+        <span>
+          <span class="story-title {% if h.c.status.value == 'GRANTED' %}good{% else %}bad{% endif %}">{{ "Texts on" if h.c.status.value == "GRANTED" else "Texts off" }}</span>
+          <br><span class="story-detail">{{ h.source }}{% if h.by %} · recorded by {{ h.by }}{% endif %}{% if h.c.note %} · {{ h.c.note }}{% endif %}</span>
+        </span>
+      </li>
+      {% else %}
+      <li><span class="muted">No consent on record. Texts are off.</span></li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <aside class="panel" aria-label="Change consent">
+    <h2 class="label">Now</h2>
+    <p class="call">{{ state }}</p>
+    {% if state == "Replied STOP" %}
+      <p class="muted">This person replied STOP. Texts stay off until you record new written consent from them. Your system cannot turn them back on.</p>
+    {% endif %}
+    {% if state != "Texts on" %}
+    <form method="post" action="/app/b/{{ broker.id }}/contacts/{{ contact.id }}/consent" class="panel">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="granted" value="1">
+      <label for="note">Where is their written consent?</label>
+      <input id="note" type="text" name="note" placeholder="e.g. signed form in the carrier file, 12 Nov" required>
+      <button class="button" type="submit">Record written consent</button>
+    </form>
+    {% else %}
+    <form method="post" action="/app/b/{{ broker.id }}/contacts/{{ contact.id }}/consent" class="panel">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="granted" value="0">
+      <label for="note2">Why (optional)</label>
+      <input id="note2" type="text" name="note">
+      <button class="button ghost" type="submit">Stop texting this person</button>
+    </form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

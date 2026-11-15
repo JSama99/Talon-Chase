@@ -585,6 +585,19 @@ def _nothing_sensitive_sent(s: Snapshot) -> Iterator[Violation]:
             yield _v("TC-20", msg, str(exc))
 
 
+@rule("TC-21", "Active operators sign in with distinct email addresses.")
+def _operator_emails(s: Snapshot) -> Iterator[Violation]:
+    seen: dict[str, str] = {}
+    for operator in s.all(m.Operator):
+        email = operator.email.strip().lower()
+        if not operator.active or not email:
+            continue
+        if email in seen:
+            yield _v("TC-21", operator, f"shares {email} with operator {seen[email]}")
+        else:
+            seen[email] = operator.id
+
+
 def check_store(store: Any) -> list[Violation]:
     """Run every rule. Returns all violations, in rule order."""
     snapshot = Snapshot(store)

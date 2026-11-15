@@ -12,7 +12,7 @@ and a test fails if they fall behind.
 | --- | --- |
 | Version | `1.0.0` |
 | Id | `urn:talonsight:talon-chase:ontology:1.0.0` |
-| Schema SHA-256 | `ba6174884bdeae9ec203caf12255b48d4066fcbdfce0f450fc2689eb32db60ca` |
+| Schema SHA-256 | `065e6c7121cd9d423cd3173ef4e7e825fd919aaf59e96346af400ba9b5f9d31c` |
 | Schema | [`ontology/talon-chase.schema.json`](../ontology/talon-chase.schema.json) |
 | JSON-LD context | [`ontology/talon-chase.context.jsonld`](../ontology/talon-chase.context.jsonld) |
 
@@ -402,6 +402,7 @@ Per-broker schedule and policy. Every value can be changed by the broker.
 | `confidence_floor` | integer | Below this reading confidence (0 to 100), a person decides. |
 | `writeback_retry_backoff_ms` | list of integer | Waits between filing retries; when it runs out, the next rung is tried. |
 | `upload_link_ttl_ms` | integer | How long an upload link stays valid. |
+| `timezone` | string | IANA time zone the broker works in; the broker screens show times in it. |
 | `send_retry_backoff_ms` | list of integer | Waits between delivery retries; when it runs out, the message fails. |
 
 ### Consent
@@ -566,6 +567,7 @@ Each evidence kind has exactly these payload fields, all required. See
 | `chase.rescheduled` | `next_step`: Step, `at_ms`: int |
 | `chase.state` | `chase_id`: str, `from`: ChaseState, `to`: ChaseState |
 | `check.completed` | `check_id`: str, `document_id`: str, `result`: CheckResult, `reasons`: str[], `reroute_load_id`: str |
+| `config.changed` | `by`: str, `fields`: str[] |
 | `consent.recorded` | `consent_id`: str, `contact_id`: str, `seq`: int, `status`: ConsentStatus, `source`: ConsentSource, `by`: str, `inbound_id`: str |
 | `contact.approved` | `contact_id`: str, `carrier_id`: str, `by`: str |
 | `document.received` | `document_id`: str, `sha256`: str, `filename`: str, `doc_type`: DocType, `rerouted_from_load`: str |
@@ -587,6 +589,8 @@ Each evidence kind has exactly these payload fields, all required. See
 | `message.reclaimed` | `outbox_id`: str, `after_try`: int |
 | `message.retry` | `outbox_id`: str, `try`: int, `error`: str, `next_attempt_at_ms`: int |
 | `message.sent` | `outbox_id`: str, `channel`: Channel, `to`: str[], `provider_id`: str, `try`: int |
+| `operator.saved` | `operator_id`: str, `role`: OperatorRole, `active`: bool, `by`: str |
+| `operator.signed_in` | `operator_id`: str |
 | `outbound.blocked` | `step`: Step |
 | `outbound.refused` | `reason`: str |
 | `outbound.switch` | `enabled`: bool, `by`: str |
@@ -632,6 +636,7 @@ the synthetic evaluation requires zero.
 | TC-18 | Consent history is coherent: numbered 1, 2, 3... in the order recorded, with time never going backwards; STOP withdraws and names its message; written consent names an operator; after a STOP only written consent grants again. |
 | TC-19 | Every evidence chain verifies, every load's chain starts with load.received, and every chase is on its load's chain. |
 | TC-20 | No carrier request contains anything the ontology marks sensitive. |
+| TC-21 | Active operators sign in with distinct email addresses. |
 
 ## Changing the ontology
 

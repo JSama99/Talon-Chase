@@ -3,11 +3,29 @@
 Three screens. The broker should open this for two minutes a day, clear a short list,
 and leave. It is not a dashboard to manage.
 
-Designs for the three screens are in Paper: https://app.paper.design/file/01M7E2JX9YN540Z2MN7K42VXAE
-The numbers in them are placeholders. "Median to filed" comes from `summary.median_ms_to_filed`.
+Designs are in Paper: https://app.paper.design/file/01M7E2JX9YN540Z2MN7K42VXAE
+**Built** in `chase/app/`, served at `/app`, and checked against those designs with
+`python -m chase.app.preview` (renders every screen to `out/screens/`).
 
-Every field below exists in the API today. Times arrive as epoch milliseconds; show
-them in the broker's time zone.
+| Screen | Route |
+| --- | --- |
+| Sign in | `GET /app/login`, link `GET`/`POST /app/login/{token}`, `POST /app/logout` |
+| Needs you | `GET /app/b/{broker}` |
+| Load | `GET /app/b/{broker}/loads/{id}`, files under `/documents/{id}` and `/messages/{id}/files/{n}`, `evidence.json` |
+| All chases | `GET /app/b/{broker}/chases?state=` |
+| Settings | `GET /app/b/{broker}/settings`; contact consent at `/contacts/{id}` |
+| Platform | `GET /app/brokers` (TalonSight operators pick a broker) |
+
+Times are shown in the broker's time zone (`BrokerConfig.timezone`, set on Settings).
+What each person may do:
+
+| Action | Staff | Owner | Platform |
+| --- | --- | --- | --- |
+| Resolve an escalation, approve a new address, record consent | yes | yes | yes |
+| Stop messages | yes | yes | yes |
+| Start messages again, change settings, manage people | no | yes | yes |
+
+The sections below are the original brief the screens were built from.
 
 ## 1. Needs you (home)
 
@@ -95,6 +113,7 @@ shows the load number and nothing else about the load, by design.
 
 ## Before a broker uses these
 
-The API has one admin key. A real screen needs sign-in first, mapped to an operator
-record: the operator id is what every action records, and the API already refuses
-operators acting outside their broker.
+Sign-in is built (emailed one-time links, signed sessions, CSRF tokens, per-broker
+access). What remains is delivery: sign-in emails go through the email port, which is
+still the in-memory stand-in until the mailbox adapter exists. Until then, hand out
+links with `python -m chase.app.link <operator-id>`.

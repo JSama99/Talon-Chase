@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block main %}
+<h1 class="title-xl">Settings</h1>
+
+{% set on = broker.outbound_enabled %}
+<section class="switch {% if not on %}off{% endif %}" aria-labelledby="switch-title">
+  <div>
+    <h2 id="switch-title">{% if on %}Messages to carriers are on{% else %}Messages to carriers are off{% endif %}</h2>
+    {% if on %}
+    <p>Turning this off stops every email, text and filing at once. Documents that arrive are still kept and checked.</p>
+    {% else %}
+    <p>Nothing is sent or filed. {{ waiting }} message{% if waiting != 1 %}s{% endif %} waiting.{% if not is_owner %} Only the owner can turn this back on.{% endif %}</p>
+    {% endif %}
+    {% if not global_on %}<p><strong>TalonSight has also turned messages off for everyone.</strong></p>{% endif %}
+  </div>
+  {% if on %}
+  <form method="post" action="/app/b/{{ broker.id }}/outbound">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="0">
+    <button class="button red" type="submit">Stop everything</button>
+  </form>
+  {% elif is_owner %}
+  <form method="post" action="/app/b/{{ broker.id }}/outbound">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="1">
+    <button class="button" type="submit">Turn messages back on</button>
+  </form>
+  {% endif %}
+</section>
+
+<form method="post" action="/app/b/{{ broker.id }}/settings/schedule">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<fieldset {% if not is_owner %}disabled{% endif %} class="two">
+  <section class="section" aria-labelledby="when">
+    <h2 class="label" id="when">When to ask</h2>
+    <div class="setting"><label for="sms">Text the driver after</label>
+      <span class="setting-value"><input id="sms" type="number" min="0" max="72" name="sms_delay_hours" value="{{ hours(cfg.sms_delay_ms) }}"> hours</span></div>
+    <div class="setting"><label for="morning">Second request</label>
+      <span class="setting-value"><input id="morning" type="number" min="0" max="23" name="morning_hour" value="{{ cfg.morning_hour }}">:00 next business day</span></div>
+    <div class="setting"><label for="third">Third request, copying you, after</label>
+      <span class="setting-value"><input id="third" type="number" min="1" max="240" name="third_attempt_hours" value="{{ hours(cfg.third_attempt_ms) }}"> hours</span></div>
+    <div class="setting"><label for="esc">Hand to you after a further</label>
+      <span class="setting-value"><input id="esc" type="number" min="1" max="240" name="escalate_wait_hours" value="{{ hours(cfg.escalate_wait_ms) }}"> hours</span></div>
+    <div class="setting"><span><label for="qs">Quiet hours</label><br><span class="muted">In the carrier's local time. Nothing is sent.</span></span>
+      <span class="setting-value"><input id="qs" type="number" min="0" max="23" name="quiet_start_hour" value="{{ cfg.quiet_start_hour }}">:00 to
+        <label class="visually-hidden" for="qe">Quiet hours end</label><input id="qe" type="number" min="0" max="23" name="quiet_end_hour" value="{{ cfg.quiet_end_hour }}">:00</span></div>
+  </section>
+
+  <section class="section" aria-labelledby="strict">
+    <h2 class="label" id="strict">How strict</h2>
+    <div class="setting"><span><label for="conf">Reading confidence</label><br><span class="muted">Below this, you decide.</span></span>
+      <span class="setting-value"><input id="conf" type="number" min="0" max="100" name="confidence_floor" value="{{ cfg.confidence_floor }}">%</span></div>
+    <div class="setting"><label for="reasks">Re-asks for a bad document</label>
+      <span class="setting-value"><input id="reasks" type="number" min="0" max="10" name="max_reasks" value="{{ cfg.max_reasks }}"></span></div>
+    <div class="setting"><label for="tz">Your time zone</label>
+      <span class="setting-value"><select id="tz" name="timezone">{% for z in zones %}<option value="{{ z }}" {% if z == cfg.timezone %}selected{% endif %}>{{ z.split("/")[-1].replace("_", " ") }}</option>{% endfor %}</select></span></div>
+
+    <h2 class="label spaced">Where PODs are filed</h2>
+    {% if broker.adapter == "packet_email" %}
+      <p><strong>Emailed packet to {{ broker.rep_email }}</strong><br><span class="muted">One email per load with the checked file. Works with any TMS.</span></p>
+    {% else %}
+      <p><strong>Straight into your system</strong> <span class="muted">({{ broker.adapter }})</span><br><span class="muted">If it is down, the packet is emailed to {{ broker.rep_email }} instead.</span></p>
+    {% endif %}
+    {% if is_owner %}<button class="button" type="submit">Save settings</button>{% else %}<span class="muted">Only the owner can change these.</span>{% endif %}
+  </section>
+</fieldset>
+</form>
+
+<section class="section" id="people" aria-labelledby="people-title">
+  <h2 class="label" id="people-title">People who can sign in</h2>
+  <table class="table">
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th class="right"><span class="visually-hidden">Action</span></th></tr></thead>
+    <tbody>
+    {% for p in people %}
+      <tr>
+        <td>{{ p.name }}{% if p.id == operator.id %} <span class="muted">(you)</span>{% endif %}{% if not p.active %} <span class="pill">Off</span>{% endif %}</td>
+        <td>{{ p.email or "—" }}</td>
+        <td>{{ "Owner" if p.role.value == "OWNER" else "Staff" }}</td>
+        <td class="right">
+          {% if is_owner and p.id != operator.id %}
+          <form method="post" action="/app/b/{{ broker.id }}/people">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ p.id }}">
+            <input type="hidden" name="action" value="{{ 'deactivate' if p.active else 'activate' }}">
+            <button class="link-button" type="submit">{{ "Turn off" if p.active else "Turn on" }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if is_owner %}
+  <form method="post" action="/app/b/{{ broker.id }}/people" class="inline-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="visually-hidden" for="pn">Name</label><input id="pn" type="text" name="name" placeholder="Name" required>
+    <label class="visually-hidden" for="pe">Email</label><input id="pe" type="email" name="email" placeholder="Email" required>
+    <label class="visually-hidden" for="pr">Role</label>
+    <select id="pr" name="role"><option value="STAFF">Staff</option><option value="OWNER">Owner</option></select>
+    <button class="button small" type="submit">Add</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="section" aria-labelledby="texts-title">
+  <h2 class="label" id="texts-title">Who may be texted</h2>
+  {% if texting %}
+  <table class="table">
+    <thead><tr><th>Contact</th><th>Carrier</th><th>Phone</th><th>Texts</th></tr></thead>
+    <tbody>
+    {% for t in texting %}
+      <tr>
+        <td><a href="/app/b/{{ broker.id }}/contacts/{{ t.contact.id }}">{{ t.contact.name or t.contact.role.value|capitalize }}</a></td>
+        <td>{{ t.carrier }}</td>
+        <td>{{ t.contact.phone|phone }}</td>
+        <td><span class="pill {% if t.state == 'Texts on' %}on{% elif t.state == 'Replied STOP' %}stop{% endif %}">{{ t.state }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No contacts with a phone number yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

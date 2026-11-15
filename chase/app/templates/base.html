@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Talon Chase{% endblock %}{% if broker %} · {{ broker.name }}{% endif %}</title>
+  <link rel="stylesheet" href="/app/static/app.css">
+</head>
+<body>
+<div class="frame">
+  <aside class="side">
+    <div>
+      <a class="brand" href="/app"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Talon Chase</span></a>
+      {% if broker %}
+      <nav class="nav" aria-label="Screens">
+        <a href="/app/b/{{ broker.id }}" {% if page == "needs_you" %}aria-current="page"{% endif %}>
+          <span>Needs you</span>{% if needs_you %}<span class="count">{{ needs_you }}</span>{% endif %}
+        </a>
+        <a href="/app/b/{{ broker.id }}/chases" {% if page == "chases" %}aria-current="page"{% endif %}>All chases</a>
+        <a href="/app/b/{{ broker.id }}/settings" {% if page == "settings" %}aria-current="page"{% endif %}>Settings</a>
+      </nav>
+      {% endif %}
+    </div>
+    <div class="who">
+      {% if broker %}
+      <p class="label">Broker</p>
+      <div class="who-name">{{ broker.name }}</div>
+      {% endif %}
+      <div class="who-me">{{ operator.name }}{% if is_platform %} · TalonSight{% endif %}</div>
+      {% if is_platform and broker %}<a class="muted" href="/app/brokers">Switch broker</a>{% endif %}
+      <form method="post" action="/app/logout">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link-button" type="submit">Sign out</button>
+      </form>
+    </div>
+  </aside>
+  <main class="main" id="main">
+    {% if flash %}<p class="flash {% if flash.e %}error{% endif %}" role="{% if flash.e %}alert{% else %}status{% endif %}">{{ flash.m }}</p>{% endif %}
+    {% block main %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{% extends "signin_base.html" %}
+{% block title %}Check your email{% endblock %}
+{% block card %}
+<h1>Check your email</h1>
+<p>If {{ email or "that address" }} can sign in, a link is on its way. It works once, for 15 minutes.</p>
+<p class="muted">Nothing arrived after a few minutes? Check spam, or ask your owner to add you under Settings.</p>
+<a href="/app/login">Use another address</a>
+{% endblock %}

@@ -7,10 +7,12 @@ All time comes from the injected clock and every side effect goes through a port
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from chase.domain import outbound
 from chase.domain.checks import CheckOutcome, Extraction, check_document
@@ -40,7 +42,9 @@ from chase.domain.models import (
     Load,
     Operator,
     OperatorRole,
+    OutboxMessage,
     OutboxPurpose,
+    OutboxStatus,
     Party,
     PartyRole,
     Requirement,
@@ -196,8 +200,17 @@ class ChaseEngine:
     def _can_text(self, contact: Contact) -> bool:
         return bool(contact.phone and contact.verified and self.sms_allowed(contact.id))
 
-    def _operator(self, operator_id: str, broker_id: str, platform_only: bool = False) -> Operator:
-        """The active operator ``operator_id``, allowed to act for ``broker_id``."""
+    def _operator(
+        self,
+        operator_id: str,
+        broker_id: str,
+        platform_only: bool = False,
+        owner_only: bool = False,
+    ) -> Operator:
+        """The active operator ``operator_id``, allowed to act for ``broker_id``.
+
+        Platform operators may act for any broker. ``owner_only`` also refuses staff.
+        """
         operator = self.store.get(Operator, operator_id) if operator_id else None
         if operator is None:
             raise PermissionError(f"unknown operator {operator_id!r}")
@@ -209,7 +222,13 @@ class ChaseEngine:
             raise PermissionError("only a platform operator may do this")
         if operator.broker_id != broker_id:
             raise PermissionError(f"operator {operator_id} does not work for broker {broker_id}")
+        if owner_only and operator.role is not OperatorRole.OWNER:
+            raise PermissionError("only the broker's owner may do this")
         return operator
+
+    def operator_for(self, operator_id: str, broker_id: str) -> Operator:
+        """The operator, if they may act for this broker; raises PermissionError otherwise."""
+        return self._operator(operator_id, broker_id)
 
     def _outbound_enabled(self, broker: Broker) -> bool:
         return self.store.get_setting(GLOBAL_SWITCH, "1") == "1" and broker.outbound_enabled
@@ -1228,8 +1247,9 @@ class ChaseEngine:
         self._record(SYSTEM_CHAIN, "outbound.switch", {"enabled": enabled, "by": by})
 
     def set_broker_outbound(self, broker_id: str, enabled: bool, by: str) -> None:
+        """Anyone at the broker may stop messages; only the owner may start them again."""
         broker: Broker = self._need(Broker, broker_id)
-        self._operator(by, broker_id)
+        self._operator(by, broker_id, owner_only=enabled)
         broker.outbound_enabled = enabled
         self.store.put(broker)
         self._record(f"broker:{broker_id}", "outbound.switch", {"enabled": enabled, "by": by})
@@ -1295,6 +1315,127 @@ class ChaseEngine:
         )
         return consent
 
+    def update_broker_config(
+        self, broker_id: str, changes: dict[str, Any], by: str = ""
+    ) -> BrokerConfig:
+        """Change schedule and policy settings. ``by`` is the owner making the change;
+        empty means the broker's own system, through the admin API."""
+        broker: Broker = self._need(Broker, broker_id)
+        if by:
+            self._operator(by, broker_id, owner_only=True)
+        fields = {f.name: f for f in dataclasses.fields(BrokerConfig)}
+        config = replace(broker.config)
+        for key, value in changes.items():
+            if key not in fields:
+                raise ValueError(f"unknown setting: {key}")
+            current = getattr(config, key)
+            if isinstance(current, str):
+                ok = isinstance(value, str)
+            elif isinstance(current, list):
+                ok = isinstance(value, list) and all(_non_negative_int(v) for v in value)
+            else:
+                ok = _non_negative_int(value)
+            if not ok:
+                kind = "text" if isinstance(current, str) else "a non-negative integer"
+                raise ValueError(f"{key} must be {kind}")
+            setattr(config, key, value)
+        if not (0 <= config.quiet_end_hour <= config.morning_hour < config.quiet_start_hour <= 23):
+            raise ValueError("hours must satisfy quiet_end <= morning < quiet_start <= 23")
+        if not 0 <= config.confidence_floor <= 100:
+            raise ValueError("confidence_floor must be between 0 and 100")
+        try:
+            ZoneInfo(config.timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown time zone: {config.timezone}") from exc
+        changed = sorted(k for k in changes if getattr(broker.config, k) != getattr(config, k))
+        if changed:
+            broker.config = config
+            self.store.put(broker)
+            self._record(f"broker:{broker_id}", "config.changed", {"by": by, "fields": changed})
+        return broker.config
+
+    def save_operator(self, operator: Operator, by: str = "") -> Operator:
+        """Add or change an operator. ``by`` is the broker's owner (or a platform
+        operator); empty means the admin API. A broker always keeps one active owner,
+        and active operators' sign-in emails are unique."""
+        operator = replace(operator, email=operator.email.strip().lower())
+        if (operator.role is OperatorRole.PLATFORM) == bool(operator.broker_id):
+            raise ValueError("a platform operator has no broker; everyone else has one")
+        if operator.broker_id:
+            self._need(Broker, operator.broker_id)
+        if by:
+            actor = self._operator(by, operator.broker_id, owner_only=True)
+            if operator.role is OperatorRole.PLATFORM and actor.role is not OperatorRole.PLATFORM:
+                raise PermissionError("only a platform operator may add one")
+        if operator.active and operator.email:
+            clash = [
+                o
+                for o in self.store.find(Operator)
+                if o.id != operator.id and o.active and o.email.lower() == operator.email
+            ]
+            if clash:
+                raise ValueError(f"{operator.email} already signs in as another operator")
+        previous = self.store.get(Operator, operator.id)
+        if previous and previous.broker_id != operator.broker_id:
+            raise ValueError("an operator cannot move to another broker")
+        if previous and previous.role is OperatorRole.OWNER and previous.active:
+            still_owner = operator.role is OperatorRole.OWNER and operator.active
+            others = [
+                o
+                for o in self.store.find(Operator, broker_id=previous.broker_id)
+                if o.id != operator.id and o.role is OperatorRole.OWNER and o.active
+            ]
+            if not still_owner and not others:
+                raise ValueError("a broker must keep at least one active owner")
+        self.store.put(operator)
+        chain = f"broker:{operator.broker_id}" if operator.broker_id else SYSTEM_CHAIN
+        self._record(
+            chain,
+            "operator.saved",
+            {
+                "operator_id": operator.id,
+                "role": operator.role,
+                "active": operator.active,
+                "by": by,
+            },
+        )
+        return operator
+
+    def record_sign_in(self, operator_id: str) -> None:
+        """Note that an operator signed in to the broker screens."""
+        operator: Operator = self._need(Operator, operator_id)
+        chain = f"broker:{operator.broker_id}" if operator.broker_id else SYSTEM_CHAIN
+        self._record(chain, "operator.signed_in", {"operator_id": operator.id})
+
+    def summary(self, broker_id: str) -> dict[str, Any]:
+        """Counts for the broker's home screen."""
+        broker: Broker = self._need(Broker, broker_id)
+        chases = self.store.find(Chase, broker_id=broker_id)
+        by_state: dict[str, int] = {}
+        for chase in chases:
+            by_state[chase.state.value] = by_state.get(chase.state.value, 0) + 1
+        filed = [c for c in chases if c.closed_reason == "filed" and c.closed_at_ms]
+        durations = sorted(c.closed_at_ms - c.opened_at_ms for c in filed)
+        open_escalations = [
+            e for e in self.store.find(Escalation, broker_id=broker_id) if e.resolution is None
+        ]
+        return {
+            "broker_id": broker_id,
+            "outbound_enabled": broker.outbound_enabled,
+            "global_outbound_enabled": self.store.get_setting(GLOBAL_SWITCH, "1") == "1",
+            "chases": len(chases),
+            "by_state": dict(sorted(by_state.items())),
+            "in_progress": sum(1 for c in chases if c.state in ACTIVE_STATES),
+            "needs_a_person": len(open_escalations),
+            "messages_waiting": sum(
+                1
+                for msg in self.store.find(OutboxMessage, broker_id=broker_id)
+                if msg.status in (OutboxStatus.PENDING, OutboxStatus.SENDING)
+            ),
+            "filed": len(filed),
+            "median_ms_to_filed": durations[len(durations) // 2] if durations else None,
+        }
+
     def queue(self, broker_id: str) -> dict[str, list[dict[str, Any]]]:
         """What a person needs to look at: open escalations and messages with no home."""
         items = []
@@ -1333,3 +1474,7 @@ class ChaseEngine:
             )
         ]
         return {"escalations": items, "unmatched": unmatched}
+
+
+def _non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0

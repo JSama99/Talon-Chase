@@ -1,0 +1,9 @@
+{% extends "signin_base.html" %}
+{% block card %}
+<h1>{% if name %}Sign in as {{ name }}{% else %}Sign in{% endif %}</h1>
+<form method="post" action="/app/login/{{ token }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="button wide" type="submit">Continue</button>
+</form>
+<p class="muted">Not you? Close this page.</p>
+{% endblock %}

@@ -409,6 +409,10 @@
       "@id": "urn:talonsight:talon-chase:recorded_at_ms",
       "@type": "xsd:integer"
     },
+    "seq": {
+      "@id": "urn:talonsight:talon-chase:seq",
+      "@type": "xsd:integer"
+    },
     "recorded_by": {
       "@id": "urn:talonsight:talon-chase:recorded_by",
       "@type": "@id"

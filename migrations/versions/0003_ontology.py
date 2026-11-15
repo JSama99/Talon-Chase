@@ -6,10 +6,10 @@ Brings the tables in line with ontology 1.0.0 (docs/ONTOLOGY.md):
   ``customer_name``, ``consignee_name`` and ``consignee_address`` move there and the
   load points at them. One party per broker, role and name (case-insensitive), with
   the same id the API gives it.
-* ``consent``: permission to text becomes a history. ``contact.sms_consent`` becomes
-  a GRANTED record from the broker's system; ``contact.sms_stopped`` becomes the
-  STOP_REPLY withdrawal that the old ``sms.stopped`` evidence event names, with that
-  event's time and message.
+* ``consent``: permission to text becomes a history, numbered by ``seq`` in the
+  order recorded. ``contact.sms_consent`` becomes a GRANTED record from the broker's
+  system (seq 1); ``contact.sms_stopped`` becomes the STOP_REPLY withdrawal that the
+  old ``sms.stopped`` evidence event names, with that event's time and message.
 * ``operator``: the free-text names in ``escalation.acknowledged_by`` become STAFF
   operators of that broker, and the escalation points at them.
 * ``escalation.resolution``: escalations acknowledged before resolutions existed
@@ -91,10 +91,12 @@ def upgrade() -> None:
         sa.Column("status", sa.Text(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("recorded_at_ms", sa.BigInteger(), nullable=False),
+        sa.Column("seq", sa.BigInteger(), nullable=False),
         sa.Column("recorded_by", sa.Text(), nullable=False),
         sa.Column("inbound_id", sa.Text(), nullable=False),
         sa.Column("note", sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("contact_id", "seq", name="uq_consent_contact_id_seq"),
     )
     op.create_index(op.f("ix_consent_status"), "consent", ["status"], unique=False)
 
@@ -181,16 +183,16 @@ def _consent_up(conn) -> None:
             "inbound_id": payload["inbound_id"],
         }
     insert = sa.text(
-        "INSERT INTO consent (id, contact_id, channel, status, source, recorded_at_ms, "
+        "INSERT INTO consent (id, contact_id, channel, status, source, recorded_at_ms, seq, "
         "recorded_by, inbound_id, note) VALUES (:id, :contact_id, 'SMS', :status, :source, "
-        ":recorded_at_ms, '', :inbound_id, :note)"
+        ":recorded_at_ms, :seq, '', :inbound_id, :note)"
     )
     for contact in _rows(conn, "SELECT id, sms_consent, sms_stopped FROM contact ORDER BY id"):
         if contact["sms_consent"]:
             conn.execute(
                 insert,
                 {"id": f"cns-{contact['id']}-granted", "contact_id": contact["id"],
-                 "status": "GRANTED", "source": "TMS_SYNC", "recorded_at_ms": 0,
+                 "status": "GRANTED", "source": "TMS_SYNC", "recorded_at_ms": 0, "seq": 1,
                  "inbound_id": "", "note": CONSENT_NOTE},
             )  # fmt: skip
         if contact["sms_stopped"]:
@@ -203,6 +205,7 @@ def _consent_up(conn) -> None:
                  # it comes from the broker's system; a later sync could re-grant it.
                  "source": "STOP_REPLY" if stop else "TMS_SYNC",
                  "recorded_at_ms": stop["at_ms"] if stop else 1,
+                 "seq": 2 if contact["sms_consent"] else 1,
                  "inbound_id": stop["inbound_id"] if stop else "", "note": STOP_NOTE},
             )  # fmt: skip
 
@@ -283,7 +286,7 @@ def downgrade() -> None:
         )  # fmt: skip
 
     history: dict[str, list[dict]] = {}
-    for consent in _rows(conn, "SELECT * FROM consent ORDER BY recorded_at_ms, id"):
+    for consent in _rows(conn, "SELECT * FROM consent ORDER BY contact_id, seq"):
         history.setdefault(consent["contact_id"], []).append(consent)
     for contact_id, records in history.items():
         stopped = False

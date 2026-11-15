@@ -552,6 +552,7 @@
         "status",
         "source",
         "recorded_at_ms",
+        "seq",
         "recorded_by",
         "inbound_id",
         "note"
@@ -583,6 +584,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "seq": {
+          "description": "Position in this contact's consent history, from 1, in the order recorded. Decides which record is latest; times can tie and ids carry no order.",
+          "type": "integer",
+          "minimum": 0
+        },
         "recorded_by": {
           "description": "The operator who recorded it; empty when it came from the carrier or a sync.",
           "type": "string",
@@ -600,7 +606,7 @@
           "type": "string"
         }
       },
-      "description": "One recorded change to whether a contact may be texted. The latest record wins.",
+      "description": "One recorded change to whether a contact may be texted. The record with the highest ``seq`` is the contact's current state.",
       "x-group": "Policy"
     },
     "ConsentSource": {
@@ -2460,6 +2466,7 @@
       "required": [
         "consent_id",
         "contact_id",
+        "seq",
         "status",
         "source",
         "by",
@@ -2471,6 +2478,10 @@
         },
         "contact_id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
         },
         "status": {
           "$ref": "#/$defs/ConsentStatus"

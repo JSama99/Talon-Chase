@@ -116,3 +116,26 @@ def test_sql_and_memory_produce_identical_evidence(store):
 
     assert scenario(World(store=store)) == scenario(World())
     assert _scenario  # the memory-only determinism test lives in test_acceptance
+
+
+def test_two_writers_cannot_claim_the_same_place_in_a_consent_history(store):
+    from chase.domain.models import (
+        Carrier,
+        Channel,
+        Consent,
+        ConsentSource,
+        ConsentStatus,
+        Contact,
+        Role,
+    )
+
+    store.put(Broker("b1", "B", "pods@b.example", "ops@b.example"))
+    store.put(Carrier("c1", "b1", "C", "MC1", "America/Chicago"))
+    store.put(Contact("k1", "c1", Role.DRIVER, "Sam", phone="+13125550142"))
+
+    def consent(consent_id: str, status: ConsentStatus) -> Consent:
+        return Consent(consent_id, "k1", Channel.SMS, status, ConsentSource.TMS_SYNC, 5, seq=1)
+
+    store.put(consent("cns-a", ConsentStatus.GRANTED))
+    with pytest.raises(sa.exc.IntegrityError):
+        store.put(consent("cns-b", ConsentStatus.WITHDRAWN))

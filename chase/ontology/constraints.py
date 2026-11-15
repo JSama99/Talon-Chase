@@ -380,18 +380,21 @@ def _packet(s: Snapshot) -> Iterator[Violation]:
             yield _v("TC-13", msg, "packet not addressed to the broker's rep by email")
 
 
+def _history(s: Snapshot, contact_id: str) -> list[m.Consent]:
+    return sorted(s.where(m.Consent, "contact_id", contact_id), key=lambda c: c.seq)
+
+
 def _consent_at(s: Snapshot, contact_id: str, at_ms: int) -> bool:
-    """Whether texts were allowed at ``at_ms``. A withdrawal recorded in the same
-    millisecond as a send is taken to have come after it."""
+    """Whether texts were allowed at ``at_ms``, by the last record made by then. A
+    withdrawal recorded in the same millisecond as a send is taken to have come after
+    it, so the send is not blamed for it."""
     records = [
         c
-        for c in s.where(m.Consent, "contact_id", contact_id)
+        for c in _history(s, contact_id)
         if c.recorded_at_ms < at_ms
         or (c.recorded_at_ms == at_ms and c.status is ConsentStatus.GRANTED)
     ]
-    if not records:
-        return False
-    return max(records, key=lambda c: (c.recorded_at_ms, c.id)).status is ConsentStatus.GRANTED
+    return bool(records) and records[-1].status is ConsentStatus.GRANTED
 
 
 @rule("TC-14", "Every delivered text went to a contact who had consent at that moment.")
@@ -501,14 +504,18 @@ def _writebacks(s: Snapshot) -> Iterator[Violation]:
 
 @rule(
     "TC-18",
-    "Consent history is coherent: STOP withdraws and names its message, written "
-    "consent names an operator, and after a STOP only written consent grants again.",
+    "Consent history is coherent: numbered 1, 2, 3... in the order recorded, with "
+    "time never going backwards; STOP withdraws and names its message; written "
+    "consent names an operator; after a STOP only written consent grants again.",
 )
 def _consent_history(s: Snapshot) -> Iterator[Violation]:
     for contact in s.all(m.Contact):
-        history = sorted(
-            s.where(m.Consent, "contact_id", contact.id), key=lambda c: (c.recorded_at_ms, c.id)
-        )
+        history = _history(s, contact.id)
+        if [c.seq for c in history] != list(range(1, len(history) + 1)):
+            yield _v("TC-18", contact, "consent history is not numbered 1, 2, 3...")
+        times = [c.recorded_at_ms for c in history]
+        if times != sorted(times):
+            yield _v("TC-18", contact, "a later consent record has an earlier time")
         stopped = False
         for consent in history:
             if consent.channel is not m.Channel.SMS:

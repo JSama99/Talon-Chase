@@ -27,6 +27,9 @@ T = TypeVar("T")
 ADVISORY_KEY = 7_423_001
 # A second insert with the same key fails, so one decision can never become two messages.
 UNIQUE = {"OutboxMessage": ("idempotency_key",)}
+# Unique together: two writers racing on one contact's history fail instead of
+# both claiming the same position.
+UNIQUE_TOGETHER = {"Consent": [("contact_id", "seq")]}
 
 
 def _unwrap_optional(tp: Any) -> tuple[Any, bool]:
@@ -77,7 +80,11 @@ def build_metadata() -> tuple[sa.MetaData, dict[type, sa.Table]]:
                     unique=unique,
                 )
             )
-        tables[cls] = sa.Table(table_name(cls), metadata, *columns)
+        constraints = [
+            sa.UniqueConstraint(*names, name=f"uq_{table_name(cls)}_{'_'.join(names)}")
+            for names in UNIQUE_TOGETHER.get(cls.__name__, ())
+        ]
+        tables[cls] = sa.Table(table_name(cls), metadata, *columns, *constraints)
     sa.Table(
         "blob",
         metadata,

@@ -12,7 +12,7 @@ and a test fails if they fall behind.
 | --- | --- |
 | Version | `1.0.0` |
 | Id | `urn:talonsight:talon-chase:ontology:1.0.0` |
-| Schema SHA-256 | `3980f386a4a76bf3f4246c6d93775b0b7c7358ab32aa25aa367a3e8d7cc55df0` |
+| Schema SHA-256 | `ba6174884bdeae9ec203caf12255b48d4066fcbdfce0f450fc2689eb32db60ca` |
 | Schema | [`ontology/talon-chase.schema.json`](../ontology/talon-chase.schema.json) |
 | JSON-LD context | [`ontology/talon-chase.context.jsonld`](../ontology/talon-chase.context.jsonld) |
 
@@ -408,7 +408,7 @@ Per-broker schedule and policy. Every value can be changed by the broker.
 
 *entity*
 
-One recorded change to whether a contact may be texted. The latest record wins.
+One recorded change to whether a contact may be texted. The record with the highest ``seq`` is the contact's current state.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -418,6 +418,7 @@ One recorded change to whether a contact may be texted. The latest record wins.
 | `status` | [ConsentStatus](#consentstatus) | Granted or withdrawn. |
 | `source` | [ConsentSource](#consentsource) | Where this record came from. |
 | `recorded_at_ms` | integer | When it was recorded. |
+| `seq` | integer | Position in this contact's consent history, from 1, in the order recorded. Decides which record is latest; times can tie and ids carry no order. |
 | `recorded_by` | string | The operator who recorded it; empty when it came from the carrier or a sync. → [Operator](#operator) (optional) |
 | `inbound_id` | string | The carrier message it came from, for a STOP reply. → [Inbound](#inbound) (optional) |
 | `note` | string | Free text from the operator. |
@@ -565,7 +566,7 @@ Each evidence kind has exactly these payload fields, all required. See
 | `chase.rescheduled` | `next_step`: Step, `at_ms`: int |
 | `chase.state` | `chase_id`: str, `from`: ChaseState, `to`: ChaseState |
 | `check.completed` | `check_id`: str, `document_id`: str, `result`: CheckResult, `reasons`: str[], `reroute_load_id`: str |
-| `consent.recorded` | `consent_id`: str, `contact_id`: str, `status`: ConsentStatus, `source`: ConsentSource, `by`: str, `inbound_id`: str |
+| `consent.recorded` | `consent_id`: str, `contact_id`: str, `seq`: int, `status`: ConsentStatus, `source`: ConsentSource, `by`: str, `inbound_id`: str |
 | `contact.approved` | `contact_id`: str, `carrier_id`: str, `by`: str |
 | `document.received` | `document_id`: str, `sha256`: str, `filename`: str, `doc_type`: DocType, `rerouted_from_load`: str |
 | `document.rerouted` | `document_id`: str, `sha256`: str, `to_load`: str |
@@ -628,7 +629,7 @@ the synthetic evaluation requires zero.
 | TC-15 | A carrier message's status agrees with what was done with it. |
 | TC-16 | Every file is stored under its hash, and every check judges a document of its own chase's load with reasons that fit the result. |
 | TC-17 | A filing names a document of its chase's load, carries the agreed idempotency key, and a successful one has a receipt and a time. |
-| TC-18 | Consent history is coherent: STOP withdraws and names its message, written consent names an operator, and after a STOP only written consent grants again. |
+| TC-18 | Consent history is coherent: numbered 1, 2, 3... in the order recorded, with time never going backwards; STOP withdraws and names its message; written consent names an operator; after a STOP only written consent grants again. |
 | TC-19 | Every evidence chain verifies, every load's chain starts with load.received, and every chase is on its load's chain. |
 | TC-20 | No carrier request contains anything the ontology marks sensitive. |
 

@@ -240,10 +240,10 @@ def test_ontology_migration_carries_every_value_over_and_back(monkeypatch):
         assert l2.consignee_party_id == ""
 
         consents = sorted(store.find(Consent), key=lambda c: (c.contact_id, c.recorded_at_ms))
-        assert [(c.contact_id, c.status, c.source, c.inbound_id) for c in consents] == [
-            ("k1", ConsentStatus.GRANTED, ConsentSource.TMS_SYNC, ""),
-            ("k2", ConsentStatus.GRANTED, ConsentSource.TMS_SYNC, ""),
-            ("k2", ConsentStatus.WITHDRAWN, ConsentSource.STOP_REPLY, "in-7"),
+        assert [(c.contact_id, c.seq, c.status, c.source, c.inbound_id) for c in consents] == [
+            ("k1", 1, ConsentStatus.GRANTED, ConsentSource.TMS_SYNC, ""),
+            ("k2", 1, ConsentStatus.GRANTED, ConsentSource.TMS_SYNC, ""),
+            ("k2", 2, ConsentStatus.WITHDRAWN, ConsentSource.STOP_REPLY, "in-7"),
         ]
         assert consents[-1].recorded_at_ms == 30
 

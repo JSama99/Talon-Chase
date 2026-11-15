@@ -8,6 +8,7 @@ All time comes from the injected clock and every side effect goes through a port
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -166,10 +167,26 @@ class ChaseEngine:
     def _dispatcher_emails(self, load: Load) -> list[str]:
         return [c.email for c in self._send_contacts(load) if c.role is Role.DISPATCHER and c.email]
 
+    def consent_history(self, contact_id: str) -> list[Consent]:
+        """Every consent record for the contact, in the order they were recorded."""
+        return sorted(self.store.find(Consent, contact_id=contact_id), key=lambda c: c.seq)
+
     def latest_consent(self, contact_id: str) -> Consent | None:
         """The contact's most recent consent record, or None if there has never been one."""
-        records = self.store.find(Consent, contact_id=contact_id)
-        return max(records, key=lambda c: (c.recorded_at_ms, c.id)) if records else None
+        history = self.consent_history(contact_id)
+        return history[-1] if history else None
+
+    @staticmethod
+    def stop_in_force(history: Sequence[Consent]) -> bool:
+        """True when the contact replied STOP after the last written grant. Only an
+        operator recording new written consent lifts it."""
+        stopped = False
+        for record in history:
+            if record.source is ConsentSource.STOP_REPLY:
+                stopped = True
+            elif record.status is ConsentStatus.GRANTED and record.source is ConsentSource.WRITTEN:
+                stopped = False
+        return stopped
 
     def sms_allowed(self, contact_id: str) -> bool:
         """True when the latest consent record for this contact grants texts."""
@@ -1228,8 +1245,10 @@ class ChaseEngine:
     ) -> Consent | None:
         """Record a change to whether a contact may be texted.
 
-        Returns None when nothing changes. After a STOP reply, only an operator
-        recording WRITTEN consent can grant texts again; anything else raises.
+        Returns None when nothing changes. A STOP reply is always recorded, even
+        when texts were already off, because it is what keeps a later sync from
+        turning them back on: after a STOP, only an operator recording WRITTEN consent
+        can grant texts again, and anything else raises PermissionError.
         """
         contact: Contact = self._need(Contact, contact_id)
         carrier: Carrier = self._need(Carrier, contact.carrier_id)
@@ -1238,16 +1257,13 @@ class ChaseEngine:
             self._operator(by, carrier.broker_id)
         if source is ConsentSource.STOP_REPLY and (granted or not inbound_id):
             raise ValueError("a STOP reply withdraws consent and names the message")
-        latest = self.latest_consent(contact.id)
+        history = self.consent_history(contact.id)
+        latest = history[-1] if history else None
         status = ConsentStatus.GRANTED if granted else ConsentStatus.WITHDRAWN
-        if latest is not None and latest.status is status:
+        is_stop = source is ConsentSource.STOP_REPLY
+        if latest is not None and latest.status is status and not is_stop:
             return None
-        if (
-            granted
-            and latest is not None
-            and latest.source is ConsentSource.STOP_REPLY
-            and source is not ConsentSource.WRITTEN
-        ):
+        if granted and source is not ConsentSource.WRITTEN and self.stop_in_force(history):
             raise PermissionError(
                 "this contact replied STOP; only an operator can record new written consent"
             )
@@ -1258,6 +1274,7 @@ class ChaseEngine:
             status=status,
             source=source,
             recorded_at_ms=self.clock.now_ms(),
+            seq=latest.seq + 1 if latest else 1,
             recorded_by=by,
             inbound_id=inbound_id,
             note=note,
@@ -1269,6 +1286,7 @@ class ChaseEngine:
             {
                 "consent_id": consent.id,
                 "contact_id": contact.id,
+                "seq": consent.seq,
                 "status": status,
                 "source": source,
                 "by": by,

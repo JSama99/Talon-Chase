@@ -256,7 +256,8 @@ class BrokerConfig:
 
 @dataclass
 class Consent:
-    """One recorded change to whether a contact may be texted. The latest record wins."""
+    """One recorded change to whether a contact may be texted. The record with the
+    highest ``seq`` is the contact's current state."""
 
     id: str = f("Identifier.")
     contact_id: str = f("The contact this applies to.", ref="Contact")
@@ -264,6 +265,10 @@ class Consent:
     status: ConsentStatus = f("Granted or withdrawn.")
     source: ConsentSource = f("Where this record came from.")
     recorded_at_ms: int = f("When it was recorded.")
+    seq: int = f(
+        "Position in this contact's consent history, from 1, in the order recorded. "
+        "Decides which record is latest; times can tie and ids carry no order."
+    )
     recorded_by: str = f(
         "The operator who recorded it; empty when it came from the carrier or a sync.",
         ref="Operator",

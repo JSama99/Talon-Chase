@@ -240,7 +240,7 @@ def _break_tc18(s):
     s.put(
         Consent(
             "cns-x", "con-drv", Channel.SMS, ConsentStatus.WITHDRAWN,
-            ConsentSource.STOP_REPLY, 10**13,
+            ConsentSource.STOP_REPLY, 10**13, 99,
         )
     )  # fmt: skip
 

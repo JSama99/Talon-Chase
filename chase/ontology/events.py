@@ -125,6 +125,7 @@ EVENT_PAYLOADS: dict[str, dict[str, str]] = {
     "consent.recorded": {
         "consent_id": "str",
         "contact_id": "str",
+        "seq": "int",
         "status": "ConsentStatus",
         "source": "ConsentSource",
         "by": "str",

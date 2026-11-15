@@ -203,8 +203,9 @@ def test_bank_change_message_is_held_without_reply(world: World):
 
 
 def test_outbound_never_contains_rate_or_customer(world: World, monkeypatch):
-    world.dispatcher.phone, world.dispatcher.sms_consent = "+13125550199", True
+    world.dispatcher.phone = "+13125550199"
     world.store.put(world.dispatcher)
+    world.set_sms_consent(world.dispatcher, True)
     load = world.make_load()
     world.tick()
     world.run(4 * HOUR_MS)  # first email, then the driver text
@@ -219,6 +220,7 @@ def test_outbound_never_contains_rate_or_customer(world: World, monkeypatch):
         assert rate not in text.replace(load.load_number.lower(), "")
 
     # The guard itself refuses each kind of leak.
+    parties = world.engine.parties(load)
     for leak in (
         "Rate is $1,850.00",
         "pays 1850",
@@ -227,8 +229,10 @@ def test_outbound_never_contains_rate_or_customer(world: World, monkeypatch):
         "at Riverside Distribution",
     ):
         with pytest.raises(outbound.OutboundBlocked):
-            outbound.assert_safe(f"Please send the POD. {leak}", load)
-    outbound.assert_safe("Please send the POD for load 18500, ref 21850.", load)  # not the rate
+            outbound.assert_safe(f"Please send the POD. {leak}", load, parties)
+    outbound.assert_safe(
+        "Please send the POD for load 18500, ref 21850.", load, parties
+    )  # not the rate
 
     # And if a template is ever changed to leak, nothing is sent and a person is told.
     leaky = World()
@@ -282,8 +286,7 @@ def test_adapter_outage_falls_back_to_packet_email(world: World):
 
 def test_sms_requires_consent_and_honors_stop(world: World):
     # No consent on file: no text, and the evidence says why.
-    world.driver.sms_consent = False
-    world.store.put(world.driver)
+    world.set_sms_consent(world.driver, False)
     load_1 = world.make_load()
     world.tick()
     world.run(4 * HOUR_MS)
@@ -291,8 +294,7 @@ def test_sms_requires_consent_and_honors_stop(world: World):
     assert "sms.skipped" in [e.kind for e in world.store.evidence(load_1.id)]
 
     # Consent on file: one text to the driver.
-    world.driver.sms_consent = True
-    world.store.put(world.driver)
+    world.set_sms_consent(world.driver, True)
     load_2 = world.make_load()
     world.tick()
     world.run(16 * HOUR_MS)  # past the quiet hours, to 07:00 the next morning
@@ -301,7 +303,7 @@ def test_sms_requires_consent_and_honors_stop(world: World):
 
     # The driver replies STOP: never texted again, on this load or the next.
     world.inbound(broker_id="brk-1", channel=Channel.SMS, from_addr="3125550142", body=" stop ")
-    assert world.store.get(Contact, world.driver.id).sms_stopped is True
+    assert world.engine.sms_allowed(world.driver.id) is False
     load_3 = world.make_load()
     world.tick()
     world.run(4 * DAY)
@@ -310,7 +312,7 @@ def test_sms_requires_consent_and_honors_stop(world: World):
 
 
 def test_kill_switch_stops_all_outbound(world: World):
-    world.engine.set_global_outbound(False, by="jermaine")
+    world.engine.set_global_outbound(False, by="op-platform")
     load = world.make_load()
     world.tick()
     world.run(3 * DAY, step_ms=HOUR_MS)
@@ -322,14 +324,14 @@ def test_kill_switch_stops_all_outbound(world: World):
     assert world.chase(load).state is ChaseState.PASSED
     assert world.tms.filed == {} and world.email.sent == []
 
-    world.engine.set_global_outbound(True, by="jermaine")
+    world.engine.set_global_outbound(True, by="op-platform")
     world.tick()
     assert world.chase(load).state is ChaseState.CLOSED and len(world.tms.filed) == 1
 
     # The per-broker switch stops one broker and leaves the other running.
     other = dataclasses.replace(world.broker, id="brk-2", name="Second Broker")
     world.store.put(other)
-    world.engine.set_broker_outbound("brk-1", False, by="jermaine")
+    world.engine.set_broker_outbound("brk-1", False, by="op-jermaine")
     assert world.store.get(Broker, "brk-1").outbound_enabled is False
     load_2 = world.make_load()
     world.run(DAY, step_ms=HOUR_MS)

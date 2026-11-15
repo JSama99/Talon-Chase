@@ -17,12 +17,18 @@ from chase.domain.models import (
     Carrier,
     Channel,
     Chase,
+    ConsentSource,
     Contact,
     Escalation,
     Load,
+    Operator,
+    OperatorRole,
+    Party,
+    PartyRole,
     Role,
 )
 from chase.engine import ChaseEngine
+from chase.ontology.constraints import check_store
 from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.memory import MemoryStore
@@ -56,6 +62,11 @@ def pod(load: Load, **overrides) -> bytes:
 
 
 class World:
+    # Every World made during a test is checked against all ontology rules at the end
+    # of the test (see the autouse fixture below). Set ``check_rules = False`` on a
+    # world that a test breaks on purpose.
+    created: list[World] = []
+
     def __init__(
         self,
         store=None,
@@ -63,6 +74,8 @@ class World:
         carrier_tz: str = TZ,
         honors_idempotency: bool = True,
     ) -> None:
+        World.created.append(self)
+        self.check_rules = True
         self.store = store or MemoryStore()
         self.clock = FakeClock(start)
         self.ids = SequentialIds()
@@ -93,11 +106,15 @@ class World:
         self.dispatcher = Contact(
             "con-disp", "car-1", Role.DISPATCHER, "Dana", "dispatch@redlinetrucking.example"
         )
-        self.driver = Contact(
-            "con-drv", "car-1", Role.DRIVER, "Sam", phone="+1 (312) 555-0142", sms_consent=True
-        )
-        for obj in (self.broker, self.carrier, self.dispatcher, self.driver):
+        self.driver = Contact("con-drv", "car-1", Role.DRIVER, "Sam", phone="+1 (312) 555-0142")
+        self.owner = Operator("op-jermaine", "brk-1", "Jermaine", OperatorRole.OWNER)
+        self.platform = Operator("op-platform", "", "TalonSight on call", OperatorRole.PLATFORM)
+        for obj in (
+            self.broker, self.carrier, self.dispatcher, self.driver, self.owner, self.platform,
+        ):  # fmt: skip
             self.store.put(obj)
+        # The driver agreed to texts in the rate confirmation.
+        self.engine.record_consent(self.driver.id, True, ConsentSource.RATE_CONFIRMATION)
         self._load_seq = 0
 
     # -- building blocks -------------------------------------------------------
@@ -113,16 +130,24 @@ class World:
             delivery_appt_ms=self.clock.now_ms() - HOUR_MS,
             bol_number=f"BOL{55000 + n}",
             delivered_at_ms=self.clock.now_ms() if delivered else None,
-            customer_name="Acme Foods",
-            consignee_name="Riverside Distribution",
-            consignee_address="4100 Fulton Industrial Blvd, Atlanta, GA",
             pickup_number="PU-77812",
             rate_cents=185_000,
         )
+        customer = overrides.pop("customer_name", "Acme Foods")
+        consignee = overrides.pop("consignee_name", "Riverside Distribution")
+        address = overrides.pop("consignee_address", "4100 Fulton Industrial Blvd, Atlanta, GA")
         fields.update(overrides)
-        load = Load(**fields)
-        self.engine.intake_load(load)
+        parties = [
+            Party(f"{fields['id']}-customer", "brk-1", PartyRole.CUSTOMER, customer),
+            Party(f"{fields['id']}-consignee", "brk-1", PartyRole.CONSIGNEE, consignee, address),
+        ]
+        load = Load(**fields, customer_party_id=parties[0].id, consignee_party_id=parties[1].id)
+        self.engine.intake_load(load, parties)
         return load
+
+    def set_sms_consent(self, contact: Contact, granted: bool) -> None:
+        """Consent changed in the broker's system."""
+        self.engine.record_consent(contact.id, granted, ConsentSource.TMS_SYNC)
 
     def tick(self) -> int:
         """What the scheduler does every few minutes: engine tick, then deliver."""
@@ -194,3 +219,23 @@ class World:
 @pytest.fixture
 def world() -> World:
     return World()
+
+
+def check_worlds() -> None:
+    """Check every World made so far against every ontology rule, then forget them.
+
+    Fixtures that tear down a database call this first, while the data still exists.
+    """
+    made, World.created[:] = list(World.created), []
+    for world in made:
+        if world.check_rules:
+            violations = check_store(world.store)
+            assert violations == [], "\n".join(str(v) for v in violations)
+
+
+@pytest.fixture(autouse=True)
+def every_world_keeps_the_rules():
+    """After each test, every World it made must satisfy every ontology rule."""
+    World.created.clear()
+    yield
+    check_worlds()

@@ -58,18 +58,21 @@ Each has a test in `tests/test_acceptance.py`.
 1. **Deterministic.** The state machine, schedule and checks are plain code. Time and
    ids are injected. The same inputs produce the same evidence hashes.
 2. **A chase closes two ways only:** a passed check plus a successful write-back, or
-   an escalation acknowledged by a named person.
+   an escalation resolved by one of the broker's operators, with a recorded resolution.
 3. **The agent writes only to contacts on the carrier record.** An address first seen
    in a reply is never used until a person approves it.
 4. **Money talk is held.** A message mentioning bank details, remit-to, factoring, wire,
    ACH or a notice of assignment gets no reply and goes to a person, attachment and all.
 5. **Outbound carries the load number and the request, nothing else.** A guard refuses
-   any message containing the load's rate, customer, consignee, address or pickup number.
+   any message containing a value the ontology marks sensitive: the load's rate, its
+   pickup number, or the name or address of its customer or consignee.
 6. **Exception notes are never filed clean.** Shortage, damage, refusal or seal notes on
    a POD always go to a person, whatever else is right with the document.
 7. **Write-back is idempotent** by (load, document hash, adapter). A lost response is
    retried without attaching twice. An adapter outage falls back to the emailed packet.
-8. **Texts need consent and stop on STOP**, permanently, including after a contact re-sync.
+8. **Texts need consent and stop on STOP.** Consent is a history of records, each with
+   its source. After a STOP only written consent recorded by an operator turns texts back
+   on; a contact re-sync cannot.
 9. **Kill switches**, global and per broker, stop every outbound message and write-back.
    Messages already queued are held, not dropped.
 10. **Sending is separate from deciding.** The engine writes each message to an outbox
@@ -77,6 +80,9 @@ Each has a test in `tests/test_acceptance.py`.
     least once, with a stable idempotency key. See [docs/OUTBOX.md](docs/OUTBOX.md).
 11. **Every step is evidence.** Each send, reply, document, check, state change and
     write-back appends to a per-load hash chain. See [docs/EVIDENCE.md](docs/EVIDENCE.md).
+12. **Records obey the ontology.** Every record and evidence payload is checked against a
+    closed schema when it is saved, and 20 cross-record rules (TC-01 to TC-20) hold after
+    every test and in the synthetic run. See [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 ## Layout
 
@@ -85,6 +91,7 @@ chase/
   domain/      models, state machine, schedule, risk rules, document checks,
                outbound templates and guard, upload tokens (pure; no I/O)
   evidence/    canonical JSON, SHA-256 hash chain, verifier
+  ontology/    schema, evidence payloads, cross-record rules, artifact builder
   engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
   outbox.py    the outbox: enqueue, and the dispatcher that delivers, retries, gives up
   ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
@@ -95,9 +102,10 @@ chase/
   api/         FastAPI service
   demo.py      five-load walkthrough
 synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
-migrations/    Alembic: 0001 initial schema, 0002 outbox
+migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
+ontology/      generated JSON Schema and JSON-LD context
 tools/         verify_evidence.py, a standalone verifier with no project imports
-docs/          EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
+docs/          ONTOLOGY.md (generated), EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -134,9 +142,13 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 | `GET /v1/brokers/{id}/summary`, `/chases` | Counts and the list of chases |
 | `GET /v1/loads/{id}` | One load with its attempts, replies, documents, checks, escalations |
 | `GET /v1/loads/{id}/evidence` | The evidence export for that load |
-| `POST /v1/escalations/{id}/acknowledge` | A named person takes an escalation |
-| `POST /v1/contacts/approve` | A named person approves a new contact |
-| `POST /v1/outbound/switch` | Kill switch, global or for one broker |
+| `PUT /v1/operators/{id}` | Add or change one of the broker's people (`OWNER`, `STAFF`), or a TalonSight `PLATFORM` operator |
+| `POST /v1/escalations/{id}/acknowledge` | An operator resolves an escalation: `HANDLED_BY_HAND`, `WAIVED`, `DISPUTED`, or `OTHER` with a note |
+| `POST /v1/contacts/approve` | An operator approves a new contact |
+| `POST /v1/contacts/{id}/consent` | An operator records a grant or withdrawal of text consent, with its source |
+| `POST /v1/outbound/switch` | Kill switch: global needs a `PLATFORM` operator; per broker, one of that broker's |
+
+Every `by` is an operator id. An unknown, inactive or other-broker operator gets 403.
 
 ## Synthetic evaluation
 

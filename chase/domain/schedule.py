@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from chase.domain.models import BrokerConfig
+from chase.domain.models import BrokerConfig, f
 
 
 def to_local(ts_ms: int, tz: str) -> datetime:
@@ -55,11 +55,13 @@ def next_business_morning(ts_ms: int, tz: str, cfg: BrokerConfig) -> int:
 
 @dataclass(frozen=True)
 class Plan:
-    first_ms: int
-    sms_ms: int  # 0 means no driver text is planned
-    second_ms: int
-    third_ms: int
-    escalate_ms: int
+    """When each request in a chase is due, fixed when the chase opens."""
+
+    first_ms: int = f("First email.")
+    sms_ms: int = f("Driver text; 0 means none is planned.")
+    second_ms: int = f("Second request.")
+    third_ms: int = f("Third request.")
+    escalate_ms: int = f("Hand to a person if nothing has arrived.")
 
     def to_dict(self) -> dict[str, int]:
         return {

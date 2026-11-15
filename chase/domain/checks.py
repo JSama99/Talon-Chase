@@ -7,22 +7,28 @@ on the page. Whether the document is acceptable is decided by this code.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from chase.domain.models import BrokerConfig, CheckResult, DocType, Load
+from chase.domain.models import BrokerConfig, CheckResult, DocType, Load, f
 
 
 @dataclass(frozen=True)
 class Extraction:
-    doc_type: DocType = DocType.OTHER
-    readable: bool = False
-    reference_numbers: list[str] = field(default_factory=list)
-    signature_present: bool = False
-    delivery_date_ms: int | None = None
-    page_count: int = 0
-    exception_notes: list[str] = field(default_factory=list)
-    confidence: int = 0  # 0 to 100
+    """What the reader saw on a document."""
+
+    doc_type: DocType = f("What kind of document it is.", default=DocType.OTHER)
+    readable: bool = f("Whether the page could be read at all.", default=False)
+    reference_numbers: list[str] = f(
+        "Load, BOL and PO numbers printed on it.", default_factory=list
+    )
+    signature_present: bool = f("Whether the receiver signed it.", default=False)
+    delivery_date_ms: int | None = f("Delivery date written on it.", default=None)
+    page_count: int = f("Pages received.", default=0)
+    exception_notes: list[str] = f(
+        "Shortage, damage or refusal noted by the receiver.", default_factory=list
+    )
+    confidence: int = f("How sure the reader is, 0 to 100.", default=0)
 
     def to_dict(self) -> dict[str, Any]:
         return {

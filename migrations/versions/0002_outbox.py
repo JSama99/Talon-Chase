@@ -61,7 +61,8 @@ def upgrade() -> None:
     op.add_column("attempt", sa.Column("queued_at_ms", sa.BigInteger(), nullable=True))
     op.add_column("attempt", sa.Column("outbox_id", sa.Text(), nullable=False, server_default=""))
     op.execute("UPDATE attempt SET queued_at_ms = sent_at_ms")
-    op.alter_column("attempt", "queued_at_ms", nullable=False)
+    with op.batch_alter_table("attempt") as batch:  # batch: SQLite cannot ALTER COLUMN
+        batch.alter_column("queued_at_ms", nullable=False)
 
     # Every existing attempt was already delivered: record it as a sent message.
     op.execute(
@@ -92,12 +93,10 @@ def upgrade() -> None:
         WHERE EXISTS (SELECT 1 FROM outbox_message m WHERE m.id = 'msg-legacy-' || attempt.id)
         """
     )
-    op.alter_column("attempt", "outbox_id", server_default=None)
-
-    op.drop_column("attempt", "body")
-    op.drop_column("attempt", "provider_id")
-    op.drop_column("attempt", "sent_at_ms")
-    op.drop_column("attempt", "subject")
+    with op.batch_alter_table("attempt") as batch:
+        batch.alter_column("outbox_id", server_default=None)
+        for column in ("body", "provider_id", "sent_at_ms", "subject"):
+            batch.drop_column(column)
 
 
 def downgrade() -> None:
@@ -117,11 +116,12 @@ def downgrade() -> None:
         """
     )
     op.execute("UPDATE attempt SET sent_at_ms = queued_at_ms WHERE sent_at_ms IS NULL")
-    op.alter_column("attempt", "sent_at_ms", nullable=False)
-    for column in ("subject", "body", "provider_id"):
-        op.alter_column("attempt", column, server_default=None)
-    op.drop_column("attempt", "outbox_id")
-    op.drop_column("attempt", "queued_at_ms")
+    with op.batch_alter_table("attempt") as batch:
+        batch.alter_column("sent_at_ms", nullable=False)
+        for column in ("subject", "body", "provider_id"):
+            batch.alter_column(column, server_default=None)
+        batch.drop_column("outbox_id")
+        batch.drop_column("queued_at_ms")
     for column in ("status", "load_id", "chase_id", "broker_id"):
         op.drop_index(op.f(f"ix_outbox_message_{column}"), table_name="outbox_message")
     op.drop_table("outbox_message")

@@ -27,7 +27,7 @@ from chase.engine import ChaseEngine
 from chase.outbox import OutboxDispatcher, _Outcome
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.sql import METADATA, SqlStore
-from tests.conftest import World, at, pod
+from tests.conftest import World, at, check_worlds, pod
 
 DAY = 24 * HOUR_MS
 PG_URL = os.environ.get("CHASE_TEST_POSTGRES_URL")
@@ -248,13 +248,13 @@ def test_packet_to_the_broker_ignores_carrier_quiet_hours():
 def test_kill_switch_holds_queued_messages_until_turned_back_on(world: World):
     load = world.make_load()
     world.engine.tick()
-    world.engine.set_global_outbound(False, by="jermaine")
+    world.engine.set_global_outbound(False, by="op-platform")
     report = world.outbox.dispatch()
     assert report.held == 1 and report.sent == 0 and world.email.sent == []
     world.clock.advance(HOUR_MS)
     world.outbox.dispatch()
     assert world.messages(load)[0].status is OutboxStatus.PENDING
-    world.engine.set_global_outbound(True, by="jermaine")
+    world.engine.set_global_outbound(True, by="op-platform")
     assert world.outbox.dispatch().sent == 1
 
 
@@ -292,9 +292,9 @@ def test_packet_is_queued_once_however_often_the_engine_checks(world: World):
     world.store.put(world.broker)
     load = world.make_load()
     world.tick()
-    world.engine.set_global_outbound(False, by="j")
+    world.engine.set_global_outbound(False, by="op-platform")
     world.send_pod(load)
-    world.engine.set_global_outbound(True, by="j")
+    world.engine.set_global_outbound(True, by="op-platform")
     for _ in range(5):
         world.engine.tick()
         world.clock.advance(10 * MINUTE_MS)
@@ -369,6 +369,7 @@ def test_concurrent_dispatchers_on_postgres_deliver_each_message_once():
         assert {m.status for m in setup.find(OutboxMessage)} == {OutboxStatus.SENT}
         for load in loads:
             assert world.engine.export_evidence(load.id)["verification"]["ok"]
+        check_worlds()
     finally:
         METADATA.drop_all(setup.engine)
         setup.engine.dispose()

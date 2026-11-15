@@ -8,6 +8,7 @@ import copy
 from typing import Any, TypeVar
 
 from chase.evidence.chain import EvidenceEvent
+from chase.ontology.schema import validate_entity, validate_event
 
 T = TypeVar("T")
 
@@ -24,6 +25,7 @@ class MemoryStore:
         yield
 
     def put(self, obj: Any) -> None:
+        validate_entity(obj)
         self._objects.setdefault(type(obj), {})[obj.id] = copy.deepcopy(obj)
 
     def get(self, cls: type[T], obj_id: str) -> T | None:
@@ -44,6 +46,7 @@ class MemoryStore:
         return self._blobs.get(sha256)
 
     def append_evidence(self, event: EvidenceEvent) -> None:
+        validate_event(event)
         chain = self._evidence.setdefault(event.chain_id, [])
         if event.seq != len(chain):
             raise ValueError(f"evidence seq {event.seq} out of order for chain {event.chain_id}")

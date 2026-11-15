@@ -106,11 +106,41 @@ def test_memory_store_evidence_cannot_be_changed_through_a_returned_copy():
     from chase.store.memory import MemoryStore
 
     store = MemoryStore()
-    payload = {"a": {"b": 1}}
-    store.append_evidence(make_event("L", "k", 1, payload, None))
-    payload["a"]["b"] = 2
-    store.evidence("L")[0].payload["a"]["b"] = 3
-    store.last_evidence("L").payload["a"]["b"] = 4
-    assert (
-        store.evidence("L")[0].payload == {"a": {"b": 1}} and verify_chain(store.evidence("L")).ok
-    )
+    payload = {"chase_id": "c", "trigger": "t", "plan": {"first_ms": 1}}
+    store.append_evidence(make_event("L", "chase.opened", 1, payload, None))
+    payload["plan"]["first_ms"] = 2
+    store.evidence("L")[0].payload["plan"]["first_ms"] = 3
+    store.last_evidence("L").payload["plan"]["first_ms"] = 4
+    assert store.evidence("L")[0].payload["plan"] == {"first_ms": 1}
+    assert verify_chain(store.evidence("L")).ok
+
+
+def test_stores_refuse_events_and_records_the_ontology_does_not_allow():
+    from chase.domain.models import Broker
+    from chase.ontology import OntologyError
+    from chase.store.memory import MemoryStore
+
+    store = MemoryStore()
+    with pytest.raises(OntologyError, match="kind"):
+        store.append_evidence(make_event("L", "made.up", 1, {}, None))
+    with pytest.raises(OntologyError, match="extra"):
+        store.append_evidence(
+            make_event("L", "load.delivered", 1, {"delivered_at_ms": 1, "extra": 1}, None)
+        )
+    with pytest.raises(OntologyError):
+        store.append_evidence(
+            make_event("L", "load.delivered", 1, {"delivered_at_ms": "soon"}, None)
+        )
+    with pytest.raises(OntologyError):
+        store.put(
+            Broker(
+                id="b",
+                name="x",
+                chase_mailbox="a@b.example",
+                rep_email="c@d.example",
+                sms_number="",
+                adapter="fake_api",
+                outbound_enabled="yes",
+            )
+        )
+    assert store.evidence("L") == []

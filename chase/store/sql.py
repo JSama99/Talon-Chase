@@ -21,11 +21,15 @@ import sqlalchemy as sa
 
 from chase.domain.models import ENTITY_TYPES
 from chase.evidence.chain import EvidenceEvent
+from chase.ontology.schema import validate_entity, validate_event
 
 T = TypeVar("T")
 ADVISORY_KEY = 7_423_001
 # A second insert with the same key fails, so one decision can never become two messages.
 UNIQUE = {"OutboxMessage": ("idempotency_key",)}
+# Unique together: two writers racing on one contact's history fail instead of
+# both claiming the same position.
+UNIQUE_TOGETHER = {"Consent": [("contact_id", "seq")]}
 
 
 def _unwrap_optional(tp: Any) -> tuple[Any, bool]:
@@ -76,7 +80,11 @@ def build_metadata() -> tuple[sa.MetaData, dict[type, sa.Table]]:
                     unique=unique,
                 )
             )
-        tables[cls] = sa.Table(table_name(cls), metadata, *columns)
+        constraints = [
+            sa.UniqueConstraint(*names, name=f"uq_{table_name(cls)}_{'_'.join(names)}")
+            for names in UNIQUE_TOGETHER.get(cls.__name__, ())
+        ]
+        tables[cls] = sa.Table(table_name(cls), metadata, *columns, *constraints)
     sa.Table(
         "blob",
         metadata,
@@ -180,6 +188,7 @@ class SqlStore:
     # -- entities --------------------------------------------------------------
 
     def put(self, obj: Any) -> None:
+        validate_entity(obj)
         table = TABLES[type(obj)]
         row = {f.name: _to_plain(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
         with self._conn() as conn:
@@ -240,6 +249,7 @@ class SqlStore:
         )
 
     def append_evidence(self, event: EvidenceEvent) -> None:
+        validate_event(event)
         table = METADATA.tables["evidence_event"]
         row = event.to_dict()
         row["payload"] = json.dumps(

@@ -8,6 +8,7 @@ All time comes from the injected clock and every side effect goes through a port
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -26,15 +27,24 @@ from chase.domain.models import (
     ChaseState,
     Check,
     CheckResult,
+    Consent,
+    ConsentSource,
+    ConsentStatus,
     Contact,
     Document,
     Escalation,
     EscalationReason,
+    EscalationResolution,
     Inbound,
     InboundStatus,
     Load,
+    Operator,
+    OperatorRole,
     OutboxPurpose,
+    Party,
+    PartyRole,
     Requirement,
+    RequirementStatus,
     Role,
     Step,
     WriteBack,
@@ -51,6 +61,7 @@ from chase.domain.schedule import Plan, build_plan, next_allowed
 from chase.domain.states import ACCEPTS_DOCUMENTS, ACTIVE_STATES, can_transition, transition
 from chase.domain.tokens import make_upload_token, read_upload_token
 from chase.evidence import canonical_json, make_event, sha256_hex, verify_chain
+from chase.ontology import ONTOLOGY_VERSION, schema_sha256
 from chase.outbox import enqueue
 from chase.ports import (
     AdapterError,
@@ -122,6 +133,7 @@ class ChaseEngine:
             "load_id": load.id,
             "load_number": load.load_number,
             "exported_at_ms": self.clock.now_ms(),
+            "ontology": {"version": ONTOLOGY_VERSION, "schema_sha256": schema_sha256()},
             "verification": {
                 "ok": result.ok,
                 "length": result.length,
@@ -155,9 +167,49 @@ class ChaseEngine:
     def _dispatcher_emails(self, load: Load) -> list[str]:
         return [c.email for c in self._send_contacts(load) if c.role is Role.DISPATCHER and c.email]
 
+    def consent_history(self, contact_id: str) -> list[Consent]:
+        """Every consent record for the contact, in the order they were recorded."""
+        return sorted(self.store.find(Consent, contact_id=contact_id), key=lambda c: c.seq)
+
+    def latest_consent(self, contact_id: str) -> Consent | None:
+        """The contact's most recent consent record, or None if there has never been one."""
+        history = self.consent_history(contact_id)
+        return history[-1] if history else None
+
     @staticmethod
-    def _can_text(contact: Contact) -> bool:
-        return bool(contact.phone and contact.sms_consent and not contact.sms_stopped)
+    def stop_in_force(history: Sequence[Consent]) -> bool:
+        """True when the contact replied STOP after the last written grant. Only an
+        operator recording new written consent lifts it."""
+        stopped = False
+        for record in history:
+            if record.source is ConsentSource.STOP_REPLY:
+                stopped = True
+            elif record.status is ConsentStatus.GRANTED and record.source is ConsentSource.WRITTEN:
+                stopped = False
+        return stopped
+
+    def sms_allowed(self, contact_id: str) -> bool:
+        """True when the latest consent record for this contact grants texts."""
+        latest = self.latest_consent(contact_id)
+        return latest is not None and latest.status is ConsentStatus.GRANTED
+
+    def _can_text(self, contact: Contact) -> bool:
+        return bool(contact.phone and contact.verified and self.sms_allowed(contact.id))
+
+    def _operator(self, operator_id: str, broker_id: str, platform_only: bool = False) -> Operator:
+        """The active operator ``operator_id``, allowed to act for ``broker_id``."""
+        operator = self.store.get(Operator, operator_id) if operator_id else None
+        if operator is None:
+            raise PermissionError(f"unknown operator {operator_id!r}")
+        if not operator.active:
+            raise PermissionError(f"operator {operator_id} is not active")
+        if operator.role is OperatorRole.PLATFORM:
+            return operator
+        if platform_only:
+            raise PermissionError("only a platform operator may do this")
+        if operator.broker_id != broker_id:
+            raise PermissionError(f"operator {operator_id} does not work for broker {broker_id}")
+        return operator
 
     def _outbound_enabled(self, broker: Broker) -> bool:
         return self.store.get_setting(GLOBAL_SWITCH, "1") == "1" and broker.outbound_enabled
@@ -168,8 +220,27 @@ class ChaseEngine:
 
     # -------------------------------------------------------------------- intake
 
-    def intake_load(self, load: Load) -> Chase | None:
-        """Store or update a load. Opens a chase once the load is marked delivered."""
+    def intake_load(
+        self, load: Load, parties: tuple[Party, ...] | list[Party] = ()
+    ) -> Chase | None:
+        """Store or update a load, and the parties it names. Opens a chase once the load
+        is marked delivered."""
+        for party in parties:
+            if party.broker_id != load.broker_id:
+                raise ValueError(f"party {party.id} belongs to another broker")
+            self.store.put(party)
+        for field_name, role in (
+            ("customer_party_id", PartyRole.CUSTOMER),
+            ("consignee_party_id", PartyRole.CONSIGNEE),
+        ):
+            party_id = getattr(load, field_name)
+            if party_id:
+                party = self._need(Party, party_id)
+                if party.role is not role or party.broker_id != load.broker_id:
+                    raise ValueError(f"{field_name} must name a {role.value} of this broker")
+        carrier = self._need(Carrier, load.carrier_id)
+        if carrier.broker_id != load.broker_id:
+            raise ValueError("carrier belongs to a different broker")
         existing = self.store.get(Load, load.id)
         if existing is not None:
             load = replace(load, ready_to_invoice_at_ms=existing.ready_to_invoice_at_ms)
@@ -400,13 +471,18 @@ class ChaseEngine:
         # neither is checked, so random characters cannot trip the rate pattern.
         checked = text.replace(link, "").replace(load.load_number, "")
         try:
-            outbound.assert_safe(checked, load)
+            outbound.assert_safe(checked, load, self.parties(load))
         except outbound.OutboundBlocked as exc:
             self._record(load.id, "outbound.refused", {"reason": str(exc)})
             if escalate:
                 self._escalate(chase, EscalationReason.OUTBOUND_BLOCKED, str(exc))
             return False
         return True
+
+    def parties(self, load: Load) -> list[Party]:
+        """The load's customer and consignee, as far as they are known."""
+        ids = [load.customer_party_id, load.consignee_party_id]
+        return [p for p in (self.store.get(Party, i) for i in ids if i) if p is not None]
 
     def _queue_request(
         self,
@@ -618,12 +694,8 @@ class ChaseEngine:
         carriers = {c.id for c in self.store.find(Carrier, broker_id=inbound.broker_id)}
         for contact in sorted(self.store.find(Contact), key=lambda c: c.id):
             if contact.carrier_id in carriers and normalize_phone(contact.phone) == phone:
-                contact.sms_stopped = True
-                self.store.put(contact)
-                self._record(
-                    f"broker:{inbound.broker_id}",
-                    "sms.stopped",
-                    {"contact_id": contact.id, "inbound_id": inbound.id},
+                self.record_consent(
+                    contact.id, False, ConsentSource.STOP_REPLY, inbound_id=inbound.id
                 )
 
     @staticmethod
@@ -747,6 +819,7 @@ class ChaseEngine:
             "sha256": document.content_sha256,
             "filename": document.filename,
             "doc_type": document.doc_type,
+            "rerouted_from_load": "",
         }
         self._record(load.id, "document.received", payload | (extra or {}))
         return document, extraction
@@ -1028,6 +1101,7 @@ class ChaseEngine:
         load.ready_to_invoice_at_ms = now
         self.store.put(load)
         self._record(load.id, "load.ready_to_invoice", {"at_ms": now})
+        self._close_requirement(chase, RequirementStatus.MET, document.id)
         self._move(chase, ChaseState.CLOSED)
         chase.closed_at_ms = now
         chase.closed_reason = "filed"
@@ -1060,22 +1134,48 @@ class ChaseEngine:
         )
         return escalation
 
-    def acknowledge_escalation(self, escalation_id: str, by: str, note: str = "") -> Escalation:
-        """A named person takes the escalation. Closes the chase when none remain open."""
-        if not by.strip():
-            raise ValueError("an escalation must be acknowledged by a named person")
+    def _close_requirement(
+        self, chase: Chase, status: RequirementStatus, document_id: str = ""
+    ) -> None:
+        requirement: Requirement = self._need(Requirement, chase.requirement_id)
+        if requirement.status is not RequirementStatus.OPEN:
+            return
+        requirement.status = status
+        requirement.met_by_document_id = document_id
+        requirement.closed_at_ms = self.clock.now_ms()
+        self.store.put(requirement)
+        self._record(
+            chase.load_id,
+            "requirement.closed",
+            {"requirement_id": requirement.id, "status": status, "document_id": document_id},
+        )
+
+    def acknowledge_escalation(
+        self,
+        escalation_id: str,
+        by: str,
+        resolution: EscalationResolution,
+        note: str = "",
+    ) -> Escalation:
+        """An operator finishes the escalation and says how. Closes the chase, and its
+        requirement, when no escalation on it remains open."""
         escalation: Escalation = self._need(Escalation, escalation_id)
+        self._operator(by, escalation.broker_id)
+        resolution = EscalationResolution(resolution)
+        if resolution is EscalationResolution.OTHER and not note.strip():
+            raise ValueError("say what was done when the resolution is OTHER")
         if escalation.acknowledged_at_ms is not None:
             return escalation
         now = self.clock.now_ms()
         escalation.acknowledged_by = by
         escalation.acknowledged_at_ms = now
+        escalation.resolution = resolution
         escalation.note = note
         self.store.put(escalation)
         self._record(
             escalation.load_id,
             "escalation.acknowledged",
-            {"escalation_id": escalation.id, "by": by, "note": note},
+            {"escalation_id": escalation.id, "by": by, "resolution": resolution, "note": note},
         )
         chase: Chase = self._need(Chase, escalation.chase_id)
         still_open = [
@@ -1093,6 +1193,7 @@ class ChaseEngine:
                 "chase.closed",
                 {"chase_id": chase.id, "reason": "escalation_acknowledged"},
             )
+            self._close_requirement(chase, RequirementStatus.RESOLVED_BY_PERSON)
         return escalation
 
     # ---------------------------------------------------------- people's actions
@@ -1100,10 +1201,9 @@ class ChaseEngine:
     def approve_contact(
         self, carrier_id: str, role: Role, by: str, email: str = "", phone: str = ""
     ) -> Contact:
-        """A person adds a contact. This is the only way a new address is ever used."""
-        if not by.strip():
-            raise ValueError("a contact must be approved by a named person")
+        """An operator adds a contact. This is the only way a new address is ever used."""
         carrier: Carrier = self._need(Carrier, carrier_id)
+        self._operator(by, carrier.broker_id)
         contact = Contact(
             id=self.ids.new("contact"),
             carrier_id=carrier.id,
@@ -1122,14 +1222,78 @@ class ChaseEngine:
         return contact
 
     def set_global_outbound(self, enabled: bool, by: str) -> None:
+        """The switch for every broker. Platform operators only."""
+        self._operator(by, "", platform_only=True)
         self.store.set_setting(GLOBAL_SWITCH, "1" if enabled else "0")
         self._record(SYSTEM_CHAIN, "outbound.switch", {"enabled": enabled, "by": by})
 
     def set_broker_outbound(self, broker_id: str, enabled: bool, by: str) -> None:
         broker: Broker = self._need(Broker, broker_id)
+        self._operator(by, broker_id)
         broker.outbound_enabled = enabled
         self.store.put(broker)
         self._record(f"broker:{broker_id}", "outbound.switch", {"enabled": enabled, "by": by})
+
+    def record_consent(
+        self,
+        contact_id: str,
+        granted: bool,
+        source: ConsentSource,
+        by: str = "",
+        inbound_id: str = "",
+        note: str = "",
+    ) -> Consent | None:
+        """Record a change to whether a contact may be texted.
+
+        Returns None when nothing changes. A STOP reply is always recorded, even
+        when texts were already off, because it is what keeps a later sync from
+        turning them back on: after a STOP, only an operator recording WRITTEN consent
+        can grant texts again, and anything else raises PermissionError.
+        """
+        contact: Contact = self._need(Contact, contact_id)
+        carrier: Carrier = self._need(Carrier, contact.carrier_id)
+        source = ConsentSource(source)
+        if source is ConsentSource.WRITTEN or by:
+            self._operator(by, carrier.broker_id)
+        if source is ConsentSource.STOP_REPLY and (granted or not inbound_id):
+            raise ValueError("a STOP reply withdraws consent and names the message")
+        history = self.consent_history(contact.id)
+        latest = history[-1] if history else None
+        status = ConsentStatus.GRANTED if granted else ConsentStatus.WITHDRAWN
+        is_stop = source is ConsentSource.STOP_REPLY
+        if latest is not None and latest.status is status and not is_stop:
+            return None
+        if granted and source is not ConsentSource.WRITTEN and self.stop_in_force(history):
+            raise PermissionError(
+                "this contact replied STOP; only an operator can record new written consent"
+            )
+        consent = Consent(
+            id=self.ids.new("consent"),
+            contact_id=contact.id,
+            channel=Channel.SMS,
+            status=status,
+            source=source,
+            recorded_at_ms=self.clock.now_ms(),
+            seq=latest.seq + 1 if latest else 1,
+            recorded_by=by,
+            inbound_id=inbound_id,
+            note=note,
+        )
+        self.store.put(consent)
+        self._record(
+            f"broker:{carrier.broker_id}",
+            "consent.recorded",
+            {
+                "consent_id": consent.id,
+                "contact_id": contact.id,
+                "seq": consent.seq,
+                "status": status,
+                "source": source,
+                "by": by,
+                "inbound_id": inbound_id,
+            },
+        )
+        return consent
 
     def queue(self, broker_id: str) -> dict[str, list[dict[str, Any]]]:
         """What a person needs to look at: open escalations and messages with no home."""

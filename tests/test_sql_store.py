@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from chase.domain.models import HOUR_MS, Broker, BrokerConfig, Chase, ChaseState, Inbound, Load
 from chase.evidence import make_event, verify_chain
 from chase.store.sql import METADATA, SqlStore
-from tests.conftest import World, pod
+from tests.conftest import World, check_worlds, pod
 from tests.test_acceptance import _scenario
 
 URLS = ["sqlite+pysqlite:///:memory:"]
@@ -27,6 +27,7 @@ def store(request):
     METADATA.drop_all(store.engine)
     store.create_schema()
     yield store
+    check_worlds()
     METADATA.drop_all(store.engine)
     store.engine.dispose()
 
@@ -46,9 +47,16 @@ def test_round_trip_keeps_types(store):
     store.put(load)
     assert store.find(Load, delivered_at_ms=None) == [] and store.get(Load, "missing") is None
 
-    chase = Chase("ch1", "l1", "b1", "r1", opened_at_ms=1, plan={"first_ms": 2})
+    chase = Chase(
+        "ch1",
+        "l1",
+        "b1",
+        "r1",
+        opened_at_ms=1,
+        plan={"first_ms": 2, "sms_ms": 3, "second_ms": 4, "third_ms": 5, "escalate_ms": 6},
+    )
     store.put(chase)
-    assert store.find(Chase, state=ChaseState.OPEN)[0].plan == {"first_ms": 2}
+    assert store.find(Chase, state=ChaseState.OPEN)[0].plan["first_ms"] == 2
     assert store.find(Chase, state=ChaseState.CLOSED) == []
 
 
@@ -61,12 +69,14 @@ def test_blobs_settings_and_evidence(store):
     store.set_setting("k", "2")
     assert store.get_setting("k", "d") == "2"
 
-    first = make_event("L", "a", 1, {"city": "Montréal", "n": 1}, None)
-    second = make_event("L", "b", 2, {"x": [1, 2]}, first)
+    first = make_event(
+        "L", "inbound.late", 1, {"inbound_id": "Montréal", "chase_state": "ASKED"}, None
+    )
+    second = make_event("L", "load.delivered", 2, {"delivered_at_ms": 2}, first)
     store.append_evidence(first)
     store.append_evidence(second)
     assert store.last_evidence("L") == second and verify_chain(store.evidence("L")).ok
-    fork = make_event("L", "forked", 3, {}, first)
+    fork = make_event("L", "load.delivered", 3, {"delivered_at_ms": 3}, first)
     with pytest.raises(sa.exc.IntegrityError):
         store.append_evidence(fork)
 
@@ -106,3 +116,26 @@ def test_sql_and_memory_produce_identical_evidence(store):
 
     assert scenario(World(store=store)) == scenario(World())
     assert _scenario  # the memory-only determinism test lives in test_acceptance
+
+
+def test_two_writers_cannot_claim_the_same_place_in_a_consent_history(store):
+    from chase.domain.models import (
+        Carrier,
+        Channel,
+        Consent,
+        ConsentSource,
+        ConsentStatus,
+        Contact,
+        Role,
+    )
+
+    store.put(Broker("b1", "B", "pods@b.example", "ops@b.example"))
+    store.put(Carrier("c1", "b1", "C", "MC1", "America/Chicago"))
+    store.put(Contact("k1", "c1", Role.DRIVER, "Sam", phone="+13125550142"))
+
+    def consent(consent_id: str, status: ConsentStatus) -> Consent:
+        return Consent(consent_id, "k1", Channel.SMS, status, ConsentSource.TMS_SYNC, 5, seq=1)
+
+    store.put(consent("cns-a", ConsentStatus.GRANTED))
+    with pytest.raises(sa.exc.IntegrityError):
+        store.put(consent("cns-b", ConsentStatus.WITHDRAWN))

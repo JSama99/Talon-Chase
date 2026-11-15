@@ -14,6 +14,8 @@ from chase.domain.models import (
     MINUTE_MS,
     Channel,
     ChaseState,
+    Consent,
+    ConsentSource,
     EscalationReason,
     Load,
     OutboxMessage,
@@ -90,14 +92,14 @@ def test_corrected_upload_in_quiet_hours_is_accepted():
 def test_corrected_email_reply_while_outbound_is_off_is_accepted(world: World):
     load = world.make_load()
     world.tick()
-    world.engine.set_global_outbound(False, by="jermaine")
+    world.engine.set_global_outbound(False, by="op-platform")
     world.send_pod(load, signature_present=False)
     assert world.chase(load).state is ChaseState.FAILED_CHECK
 
     world.clock.advance(HOUR_MS)
     world.send_pod(load)
     assert world.chase(load).state is ChaseState.PASSED  # filing waits for the switch
-    world.engine.set_global_outbound(True, by="jermaine")
+    world.engine.set_global_outbound(True, by="op-platform")
     world.tick()
     assert world.chase(load).state is ChaseState.CLOSED
     reasks = [m for m in world.messages(load) if m.subject.startswith("Please resend")]
@@ -154,8 +156,7 @@ def test_text_is_not_sent_once_consent_is_withdrawn_in_a_contact_sync(world: Wor
     world.tick()
     world.clock.advance(3 * HOUR_MS)
     world.engine.tick()
-    world.driver.sms_consent = False
-    world.store.put(world.driver)
+    world.set_sms_consent(world.driver, False)
     world.settle()
     assert world.sms.sent == []
     texts = [m for m in world.messages(load) if m.channel is Channel.SMS]
@@ -204,7 +205,9 @@ def test_a_long_batch_does_not_let_leases_expire_before_sending():
 def test_kill_switch_stops_the_rest_of_a_batch_already_running():
     world, loads = queued_world(3)
     world.engine.email = SlowEmail(
-        world, hook_on_call=1, hook=lambda: world.engine.set_global_outbound(False, by="ops")
+        world,
+        hook_on_call=1,
+        hook=lambda: world.engine.set_global_outbound(False, by="op-platform"),
     )
     world.outbox.dispatch()
     assert world.engine.email.calls == 1
@@ -236,3 +239,52 @@ def test_quiet_hours_starting_mid_batch_defer_the_rest():
     pending = [m for m in world.messages() if m.status is OutboxStatus.PENDING]
     assert len(pending) == 2
     assert {m.next_attempt_at_ms for m in pending} == {at(2026, 11, 11, 7)}
+
+
+# --- PR #3 review -----------------------------------------------------------------
+
+
+def _text_stop(world, contact):
+    world.inbound(
+        broker_id="brk-1", channel=Channel.SMS, from_addr=contact.phone, subject="", body="STOP"
+    )
+
+
+def test_a_stop_after_a_sync_withdrawal_still_blocks_a_later_sync():
+    """Codex P1: the TMS withdrew consent, then the driver texted STOP. The STOP must
+    be on record, so a later sync cannot turn texts back on."""
+    world = World()
+    world.set_sms_consent(world.driver, False)
+    _text_stop(world, world.driver)
+    history = world.store.find(Consent, contact_id=world.driver.id)
+    assert any(c.source is ConsentSource.STOP_REPLY and c.inbound_id for c in history)
+    with pytest.raises(PermissionError):
+        world.set_sms_consent(world.driver, True)
+    assert world.engine.sms_allowed(world.driver.id) is False
+    # Written consent from an operator is still the way back.
+    world.engine.record_consent(
+        world.driver.id, True, ConsentSource.WRITTEN, by="op-jermaine", note="signed form"
+    )
+    assert world.engine.sms_allowed(world.driver.id) is True
+
+
+class _IdsThatSortBackwards:
+    """Random-looking ids: each new one sorts before the last, like UUIDs can."""
+
+    def __init__(self) -> None:
+        self.n = 10**6
+
+    def new(self, prefix: str) -> str:
+        self.n -= 1
+        return f"{prefix}-000000-{self.n:07d}"
+
+
+def test_consent_order_is_the_order_recorded_not_the_id_order():
+    """Codex P2: a grant and a STOP in the same millisecond. The STOP came second and
+    must win, whatever the ids look like."""
+    world = World()  # the driver's grant is recorded at START
+    world.engine.ids = _IdsThatSortBackwards()
+    _text_stop(world, world.driver)  # same millisecond
+    assert world.engine.sms_allowed(world.driver.id) is False
+    latest = world.engine.latest_consent(world.driver.id)
+    assert latest.source is ConsentSource.STOP_REPLY

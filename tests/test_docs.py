@@ -29,6 +29,12 @@ def test_every_evidence_kind_is_documented():
     assert missing == []
 
 
+def test_the_ontology_declares_exactly_the_kinds_the_code_records():
+    from chase.ontology.events import EVENT_PAYLOADS
+
+    assert emitted_kinds() == set(EVENT_PAYLOADS)
+
+
 def test_every_escalation_reason_has_screen_wording():
     ui = (ROOT / "docs" / "UI.md").read_text()
     missing = [r.value for r in EscalationReason if f"`{r.value}`" not in ui]

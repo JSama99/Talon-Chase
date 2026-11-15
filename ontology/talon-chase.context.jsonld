@@ -1,0 +1,533 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@vocab": "urn:talonsight:talon-chase:",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "id": "@id",
+    "Broker": {
+      "@id": "urn:talonsight:talon-chase:Broker"
+    },
+    "Operator": {
+      "@id": "urn:talonsight:talon-chase:Operator"
+    },
+    "Carrier": {
+      "@id": "urn:talonsight:talon-chase:Carrier"
+    },
+    "Contact": {
+      "@id": "urn:talonsight:talon-chase:Contact"
+    },
+    "Party": {
+      "@id": "urn:talonsight:talon-chase:Party"
+    },
+    "Load": {
+      "@id": "urn:talonsight:talon-chase:Load"
+    },
+    "Requirement": {
+      "@id": "urn:talonsight:talon-chase:Requirement"
+    },
+    "Chase": {
+      "@id": "urn:talonsight:talon-chase:Chase"
+    },
+    "Attempt": {
+      "@id": "urn:talonsight:talon-chase:Attempt"
+    },
+    "Inbound": {
+      "@id": "urn:talonsight:talon-chase:Inbound"
+    },
+    "Document": {
+      "@id": "urn:talonsight:talon-chase:Document"
+    },
+    "Check": {
+      "@id": "urn:talonsight:talon-chase:Check"
+    },
+    "Escalation": {
+      "@id": "urn:talonsight:talon-chase:Escalation"
+    },
+    "WriteBack": {
+      "@id": "urn:talonsight:talon-chase:WriteBack"
+    },
+    "OutboxMessage": {
+      "@id": "urn:talonsight:talon-chase:OutboxMessage"
+    },
+    "Consent": {
+      "@id": "urn:talonsight:talon-chase:Consent"
+    },
+    "BrokerConfig": {
+      "@id": "urn:talonsight:talon-chase:BrokerConfig"
+    },
+    "Attachment": {
+      "@id": "urn:talonsight:talon-chase:Attachment"
+    },
+    "Plan": {
+      "@id": "urn:talonsight:talon-chase:Plan"
+    },
+    "Extraction": {
+      "@id": "urn:talonsight:talon-chase:Extraction"
+    },
+    "EvidenceEvent": {
+      "@id": "urn:talonsight:talon-chase:EvidenceEvent"
+    },
+    "name": {
+      "@id": "urn:talonsight:talon-chase:name"
+    },
+    "chase_mailbox": {
+      "@id": "urn:talonsight:talon-chase:chase_mailbox"
+    },
+    "rep_email": {
+      "@id": "urn:talonsight:talon-chase:rep_email"
+    },
+    "sms_number": {
+      "@id": "urn:talonsight:talon-chase:sms_number"
+    },
+    "adapter": {
+      "@id": "urn:talonsight:talon-chase:adapter"
+    },
+    "outbound_enabled": {
+      "@id": "urn:talonsight:talon-chase:outbound_enabled",
+      "@type": "xsd:boolean"
+    },
+    "config": {
+      "@id": "urn:talonsight:talon-chase:config"
+    },
+    "broker_id": {
+      "@id": "urn:talonsight:talon-chase:broker_id",
+      "@type": "@id"
+    },
+    "role": {
+      "@id": "urn:talonsight:talon-chase:role"
+    },
+    "email": {
+      "@id": "urn:talonsight:talon-chase:email"
+    },
+    "active": {
+      "@id": "urn:talonsight:talon-chase:active",
+      "@type": "xsd:boolean"
+    },
+    "mc_number": {
+      "@id": "urn:talonsight:talon-chase:mc_number"
+    },
+    "timezone": {
+      "@id": "urn:talonsight:talon-chase:timezone"
+    },
+    "carrier_id": {
+      "@id": "urn:talonsight:talon-chase:carrier_id",
+      "@type": "@id"
+    },
+    "phone": {
+      "@id": "urn:talonsight:talon-chase:phone"
+    },
+    "verified": {
+      "@id": "urn:talonsight:talon-chase:verified",
+      "@type": "xsd:boolean"
+    },
+    "source": {
+      "@id": "urn:talonsight:talon-chase:source"
+    },
+    "address": {
+      "@id": "urn:talonsight:talon-chase:address"
+    },
+    "load_number": {
+      "@id": "urn:talonsight:talon-chase:load_number"
+    },
+    "delivery_appt_ms": {
+      "@id": "urn:talonsight:talon-chase:delivery_appt_ms",
+      "@type": "xsd:integer"
+    },
+    "bol_number": {
+      "@id": "urn:talonsight:talon-chase:bol_number"
+    },
+    "po_number": {
+      "@id": "urn:talonsight:talon-chase:po_number"
+    },
+    "expected_pages": {
+      "@id": "urn:talonsight:talon-chase:expected_pages",
+      "@type": "xsd:integer"
+    },
+    "delivered_at_ms": {
+      "@id": "urn:talonsight:talon-chase:delivered_at_ms",
+      "@type": "xsd:integer"
+    },
+    "contact_ids": {
+      "@id": "urn:talonsight:talon-chase:contact_ids",
+      "@type": "@id",
+      "@container": "@set"
+    },
+    "customer_party_id": {
+      "@id": "urn:talonsight:talon-chase:customer_party_id",
+      "@type": "@id"
+    },
+    "consignee_party_id": {
+      "@id": "urn:talonsight:talon-chase:consignee_party_id",
+      "@type": "@id"
+    },
+    "pickup_number": {
+      "@id": "urn:talonsight:talon-chase:pickup_number"
+    },
+    "rate_cents": {
+      "@id": "urn:talonsight:talon-chase:rate_cents",
+      "@type": "xsd:integer"
+    },
+    "ready_to_invoice_at_ms": {
+      "@id": "urn:talonsight:talon-chase:ready_to_invoice_at_ms",
+      "@type": "xsd:integer"
+    },
+    "load_id": {
+      "@id": "urn:talonsight:talon-chase:load_id",
+      "@type": "@id"
+    },
+    "doc_type": {
+      "@id": "urn:talonsight:talon-chase:doc_type"
+    },
+    "status": {
+      "@id": "urn:talonsight:talon-chase:status"
+    },
+    "met_by_document_id": {
+      "@id": "urn:talonsight:talon-chase:met_by_document_id",
+      "@type": "@id"
+    },
+    "closed_at_ms": {
+      "@id": "urn:talonsight:talon-chase:closed_at_ms",
+      "@type": "xsd:integer"
+    },
+    "requirement_id": {
+      "@id": "urn:talonsight:talon-chase:requirement_id",
+      "@type": "@id"
+    },
+    "opened_at_ms": {
+      "@id": "urn:talonsight:talon-chase:opened_at_ms",
+      "@type": "xsd:integer"
+    },
+    "state": {
+      "@id": "urn:talonsight:talon-chase:state"
+    },
+    "next_step": {
+      "@id": "urn:talonsight:talon-chase:next_step"
+    },
+    "next_action_at_ms": {
+      "@id": "urn:talonsight:talon-chase:next_action_at_ms",
+      "@type": "xsd:integer"
+    },
+    "attempts_sent": {
+      "@id": "urn:talonsight:talon-chase:attempts_sent",
+      "@type": "xsd:integer"
+    },
+    "reasks_sent": {
+      "@id": "urn:talonsight:talon-chase:reasks_sent",
+      "@type": "xsd:integer"
+    },
+    "plan": {
+      "@id": "urn:talonsight:talon-chase:plan"
+    },
+    "fail_reasons": {
+      "@id": "urn:talonsight:talon-chase:fail_reasons"
+    },
+    "reply_to_contact_id": {
+      "@id": "urn:talonsight:talon-chase:reply_to_contact_id",
+      "@type": "@id"
+    },
+    "passed_document_id": {
+      "@id": "urn:talonsight:talon-chase:passed_document_id",
+      "@type": "@id"
+    },
+    "writeback_id": {
+      "@id": "urn:talonsight:talon-chase:writeback_id",
+      "@type": "@id"
+    },
+    "closed_reason": {
+      "@id": "urn:talonsight:talon-chase:closed_reason"
+    },
+    "kill_noted": {
+      "@id": "urn:talonsight:talon-chase:kill_noted",
+      "@type": "xsd:boolean"
+    },
+    "chase_id": {
+      "@id": "urn:talonsight:talon-chase:chase_id",
+      "@type": "@id"
+    },
+    "step": {
+      "@id": "urn:talonsight:talon-chase:step"
+    },
+    "channel": {
+      "@id": "urn:talonsight:talon-chase:channel"
+    },
+    "to": {
+      "@id": "urn:talonsight:talon-chase:to"
+    },
+    "cc": {
+      "@id": "urn:talonsight:talon-chase:cc"
+    },
+    "queued_at_ms": {
+      "@id": "urn:talonsight:talon-chase:queued_at_ms",
+      "@type": "xsd:integer"
+    },
+    "outbox_id": {
+      "@id": "urn:talonsight:talon-chase:outbox_id",
+      "@type": "@id"
+    },
+    "from_addr": {
+      "@id": "urn:talonsight:talon-chase:from_addr"
+    },
+    "received_at_ms": {
+      "@id": "urn:talonsight:talon-chase:received_at_ms",
+      "@type": "xsd:integer"
+    },
+    "subject": {
+      "@id": "urn:talonsight:talon-chase:subject"
+    },
+    "body": {
+      "@id": "urn:talonsight:talon-chase:body"
+    },
+    "attachments": {
+      "@id": "urn:talonsight:talon-chase:attachments"
+    },
+    "external_id": {
+      "@id": "urn:talonsight:talon-chase:external_id"
+    },
+    "classification": {
+      "@id": "urn:talonsight:talon-chase:classification"
+    },
+    "hold_reason": {
+      "@id": "urn:talonsight:talon-chase:hold_reason"
+    },
+    "trusted": {
+      "@id": "urn:talonsight:talon-chase:trusted",
+      "@type": "xsd:boolean"
+    },
+    "inbound_id": {
+      "@id": "urn:talonsight:talon-chase:inbound_id",
+      "@type": "@id"
+    },
+    "filename": {
+      "@id": "urn:talonsight:talon-chase:filename"
+    },
+    "content_sha256": {
+      "@id": "urn:talonsight:talon-chase:content_sha256"
+    },
+    "extraction": {
+      "@id": "urn:talonsight:talon-chase:extraction"
+    },
+    "document_id": {
+      "@id": "urn:talonsight:talon-chase:document_id",
+      "@type": "@id"
+    },
+    "result": {
+      "@id": "urn:talonsight:talon-chase:result"
+    },
+    "reasons": {
+      "@id": "urn:talonsight:talon-chase:reasons"
+    },
+    "checked_at_ms": {
+      "@id": "urn:talonsight:talon-chase:checked_at_ms",
+      "@type": "xsd:integer"
+    },
+    "reroute_load_id": {
+      "@id": "urn:talonsight:talon-chase:reroute_load_id",
+      "@type": "@id"
+    },
+    "reason": {
+      "@id": "urn:talonsight:talon-chase:reason"
+    },
+    "detail": {
+      "@id": "urn:talonsight:talon-chase:detail"
+    },
+    "created_at_ms": {
+      "@id": "urn:talonsight:talon-chase:created_at_ms",
+      "@type": "xsd:integer"
+    },
+    "acknowledged_by": {
+      "@id": "urn:talonsight:talon-chase:acknowledged_by",
+      "@type": "@id"
+    },
+    "acknowledged_at_ms": {
+      "@id": "urn:talonsight:talon-chase:acknowledged_at_ms",
+      "@type": "xsd:integer"
+    },
+    "resolution": {
+      "@id": "urn:talonsight:talon-chase:resolution"
+    },
+    "note": {
+      "@id": "urn:talonsight:talon-chase:note"
+    },
+    "idempotency_key": {
+      "@id": "urn:talonsight:talon-chase:idempotency_key"
+    },
+    "attempts": {
+      "@id": "urn:talonsight:talon-chase:attempts",
+      "@type": "xsd:integer"
+    },
+    "receipt": {
+      "@id": "urn:talonsight:talon-chase:receipt"
+    },
+    "completed_at_ms": {
+      "@id": "urn:talonsight:talon-chase:completed_at_ms",
+      "@type": "xsd:integer"
+    },
+    "purpose": {
+      "@id": "urn:talonsight:talon-chase:purpose"
+    },
+    "next_attempt_at_ms": {
+      "@id": "urn:talonsight:talon-chase:next_attempt_at_ms",
+      "@type": "xsd:integer"
+    },
+    "quiet_tz": {
+      "@id": "urn:talonsight:talon-chase:quiet_tz"
+    },
+    "tries": {
+      "@id": "urn:talonsight:talon-chase:tries",
+      "@type": "xsd:integer"
+    },
+    "claim_token": {
+      "@id": "urn:talonsight:talon-chase:claim_token"
+    },
+    "lease_until_ms": {
+      "@id": "urn:talonsight:talon-chase:lease_until_ms",
+      "@type": "xsd:integer"
+    },
+    "last_error": {
+      "@id": "urn:talonsight:talon-chase:last_error"
+    },
+    "provider_id": {
+      "@id": "urn:talonsight:talon-chase:provider_id"
+    },
+    "sent_at_ms": {
+      "@id": "urn:talonsight:talon-chase:sent_at_ms",
+      "@type": "xsd:integer"
+    },
+    "finished_at_ms": {
+      "@id": "urn:talonsight:talon-chase:finished_at_ms",
+      "@type": "xsd:integer"
+    },
+    "deferred_noted": {
+      "@id": "urn:talonsight:talon-chase:deferred_noted",
+      "@type": "xsd:boolean"
+    },
+    "contact_id": {
+      "@id": "urn:talonsight:talon-chase:contact_id",
+      "@type": "@id"
+    },
+    "recorded_at_ms": {
+      "@id": "urn:talonsight:talon-chase:recorded_at_ms",
+      "@type": "xsd:integer"
+    },
+    "seq": {
+      "@id": "urn:talonsight:talon-chase:seq",
+      "@type": "xsd:integer"
+    },
+    "recorded_by": {
+      "@id": "urn:talonsight:talon-chase:recorded_by",
+      "@type": "@id"
+    },
+    "no_status_grace_ms": {
+      "@id": "urn:talonsight:talon-chase:no_status_grace_ms",
+      "@type": "xsd:integer"
+    },
+    "sms_delay_ms": {
+      "@id": "urn:talonsight:talon-chase:sms_delay_ms",
+      "@type": "xsd:integer"
+    },
+    "third_attempt_ms": {
+      "@id": "urn:talonsight:talon-chase:third_attempt_ms",
+      "@type": "xsd:integer"
+    },
+    "escalate_wait_ms": {
+      "@id": "urn:talonsight:talon-chase:escalate_wait_ms",
+      "@type": "xsd:integer"
+    },
+    "min_gap_ms": {
+      "@id": "urn:talonsight:talon-chase:min_gap_ms",
+      "@type": "xsd:integer"
+    },
+    "third_min_gap_ms": {
+      "@id": "urn:talonsight:talon-chase:third_min_gap_ms",
+      "@type": "xsd:integer"
+    },
+    "promise_grace_ms": {
+      "@id": "urn:talonsight:talon-chase:promise_grace_ms",
+      "@type": "xsd:integer"
+    },
+    "reask_wait_ms": {
+      "@id": "urn:talonsight:talon-chase:reask_wait_ms",
+      "@type": "xsd:integer"
+    },
+    "quiet_start_hour": {
+      "@id": "urn:talonsight:talon-chase:quiet_start_hour",
+      "@type": "xsd:integer"
+    },
+    "quiet_end_hour": {
+      "@id": "urn:talonsight:talon-chase:quiet_end_hour",
+      "@type": "xsd:integer"
+    },
+    "morning_hour": {
+      "@id": "urn:talonsight:talon-chase:morning_hour",
+      "@type": "xsd:integer"
+    },
+    "max_reasks": {
+      "@id": "urn:talonsight:talon-chase:max_reasks",
+      "@type": "xsd:integer"
+    },
+    "date_tolerance_ms": {
+      "@id": "urn:talonsight:talon-chase:date_tolerance_ms",
+      "@type": "xsd:integer"
+    },
+    "confidence_floor": {
+      "@id": "urn:talonsight:talon-chase:confidence_floor",
+      "@type": "xsd:integer"
+    },
+    "writeback_retry_backoff_ms": {
+      "@id": "urn:talonsight:talon-chase:writeback_retry_backoff_ms"
+    },
+    "upload_link_ttl_ms": {
+      "@id": "urn:talonsight:talon-chase:upload_link_ttl_ms",
+      "@type": "xsd:integer"
+    },
+    "send_retry_backoff_ms": {
+      "@id": "urn:talonsight:talon-chase:send_retry_backoff_ms"
+    },
+    "first_ms": {
+      "@id": "urn:talonsight:talon-chase:first_ms",
+      "@type": "xsd:integer"
+    },
+    "sms_ms": {
+      "@id": "urn:talonsight:talon-chase:sms_ms",
+      "@type": "xsd:integer"
+    },
+    "second_ms": {
+      "@id": "urn:talonsight:talon-chase:second_ms",
+      "@type": "xsd:integer"
+    },
+    "third_ms": {
+      "@id": "urn:talonsight:talon-chase:third_ms",
+      "@type": "xsd:integer"
+    },
+    "escalate_ms": {
+      "@id": "urn:talonsight:talon-chase:escalate_ms",
+      "@type": "xsd:integer"
+    },
+    "readable": {
+      "@id": "urn:talonsight:talon-chase:readable",
+      "@type": "xsd:boolean"
+    },
+    "reference_numbers": {
+      "@id": "urn:talonsight:talon-chase:reference_numbers"
+    },
+    "signature_present": {
+      "@id": "urn:talonsight:talon-chase:signature_present",
+      "@type": "xsd:boolean"
+    },
+    "delivery_date_ms": {
+      "@id": "urn:talonsight:talon-chase:delivery_date_ms",
+      "@type": "xsd:integer"
+    },
+    "page_count": {
+      "@id": "urn:talonsight:talon-chase:page_count",
+      "@type": "xsd:integer"
+    },
+    "exception_notes": {
+      "@id": "urn:talonsight:talon-chase:exception_notes"
+    },
+    "confidence": {
+      "@id": "urn:talonsight:talon-chase:confidence",
+      "@type": "xsd:integer"
+    }
+  }
+}

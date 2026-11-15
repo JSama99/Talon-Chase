@@ -1,15 +1,18 @@
 """Every word the agent sends to a carrier comes from this file.
 
-Messages carry the load number and the request. They never carry rates, customer
-or consignee names, pickup numbers or addresses. ``assert_safe`` enforces that as
-a second line of defence in case a template is ever changed carelessly.
+Messages carry the load number and the request. They never carry anything the
+ontology marks sensitive: rates, customer and consignee names and addresses, pickup
+numbers. ``assert_safe`` enforces that as a second line of defence in case a
+template is ever changed carelessly.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from typing import Any
 
-from chase.domain.models import Broker, Load, Step
+from chase.domain.models import Broker, Load, Step, sensitive_text
 
 REASON_TEXT: dict[str, str] = {
     "unreadable": "the image is too blurry or cropped to read",
@@ -93,17 +96,18 @@ def _digits_pattern(amount: int) -> re.Pattern[str]:
     return re.compile(rf"(?<![\d.]){amount}(?:\.\d{{2}})?(?!\d)")
 
 
-def assert_safe(text: str, load: Load) -> None:
-    """Raise OutboundBlocked if ``text`` carries any sensitive detail of ``load``."""
+def assert_safe(text: str, load: Load, parties: Iterable[Any] = ()) -> None:
+    """Raise OutboundBlocked if ``text`` carries any sensitive detail of ``load``.
+
+    "Sensitive" is whatever the ontology marks so: text fields of the load and of
+    its parties (customer, consignee), plus the load's rate.
+    """
     lowered = text.lower()
-    for kind, value in (
-        ("customer name", load.customer_name),
-        ("consignee name", load.consignee_name),
-        ("consignee address", load.consignee_address),
-        ("pickup number", load.pickup_number),
-    ):
-        if value and value.strip().lower() in lowered:
-            raise OutboundBlocked(kind)
+    for obj in (load, *parties):
+        for field_name, value in sensitive_text(obj):
+            if value.strip().lower() in lowered:
+                kind = f"{type(obj).__name__.lower()} {field_name}".replace("_", " ")
+                raise OutboundBlocked(kind)
     if load.rate_cents > 0:
         without_commas = re.sub(r"(?<=\d),(?=\d{3})", "", text)
         if _digits_pattern(load.rate_cents // 100).search(without_commas):

@@ -6,16 +6,19 @@ carriers and are protected by the signed, expiring, single-load token in the URL
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import contextlib
 import dataclasses
 import hmac
+import logging
 import threading
 from enum import Enum
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -48,6 +51,8 @@ from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
 from chase.evidence import canonical_json, sha256_hex
 from chase.outbox import OutboxDispatcher
+
+log = logging.getLogger("chase.tick")
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_INBOUND_BYTES = 25 * 1024 * 1024
@@ -210,6 +215,7 @@ def create_app(
     resend_webhook_secret: str = "",
     resend_inbox: ResendInbox | None = None,
     resend_inbound_domain: str = "",
+    tick_every_s: float = 0,
 ) -> FastAPI:
     if len(api_key) < 16:
         raise ValueError("the API key must be at least 16 characters")
@@ -430,14 +436,41 @@ def create_app(
         )
         return plain(inbound)
 
-    @app.post("/v1/tick", dependencies=[Depends(admin)])
-    def tick() -> dict:
-        """Call every minute or two: do what is due, deliver it, finish what that unblocks."""
+    def do_tick() -> dict:
+        """Do what is due, deliver it, finish what that unblocks."""
         steps = run(engine.tick)
         report = dispatcher.dispatch()
         if report.changed:
             steps += run(engine.tick)
         return {"steps": steps, "dispatch": report.to_dict()}
+
+    @app.post("/v1/tick", dependencies=[Depends(admin)])
+    def tick() -> dict:
+        """Call every minute or two, unless the service ticks itself (tick_every_s)."""
+        return do_tick()
+
+    async def tick_forever() -> None:
+        """The in-service scheduler: one tick every tick_every_s, for as long as the
+        service runs. A failed tick is logged and the next one runs on time."""
+        while True:
+            await asyncio.sleep(tick_every_s)
+            try:
+                await run_in_threadpool(do_tick)
+            except Exception:  # noqa: BLE001 - one bad tick must not stop the schedule
+                log.exception("scheduled tick failed")
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        task = asyncio.create_task(tick_forever()) if tick_every_s > 0 else None
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+    app.router.lifespan_context = lifespan
 
     @app.post("/v1/dispatch", dependencies=[Depends(admin)])
     def dispatch() -> dict:

@@ -1,8 +1,8 @@
 # Running Talon Chase locally with Resend
 
 A runbook for one machine: the app, a SQLite file, a public tunnel for Resend's
-webhook, and one test load. It needs no Docker and no Postgres. For hosting, see the
-README; for how email behaves, see [EMAIL.md](EMAIL.md).
+webhook, and one test load. It needs no Docker and no Postgres. For hosting, see
+[DEPLOY.md](DEPLOY.md); for how email behaves, see [EMAIL.md](EMAIL.md).
 
 Observed on a real run (macOS, Python 3.14, Resend free plan): sign-in email sent
 through Resend and received; chase email sent from the broker's own address; carrier
@@ -80,7 +80,8 @@ Building the load body in a short Python script avoids shell quoting mistakes.
 
 1. Open `https://<tunnel-host>/app/login` (there is no page at `/`), enter the
    operator's email, and follow the link that arrives.
-2. `POST /v1/tick` sends what is due. Do it before the broker's quiet hours begin
+2. `POST /v1/tick` sends what is due (or set `CHASE_TICK_SECONDS=60` in `.env` and
+   the app ticks itself every minute). Do it before the broker's quiet hours begin
    (20:00 in the broker's time zone by default) or sends wait until morning.
 3. Reply to the email that arrives at the contact's address.
 4. The app log should show `POST /webhooks/resend ... 200 OK`, and the reply appears on

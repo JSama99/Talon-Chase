@@ -142,6 +142,19 @@ def _from_plain(tp: Any, value: Any) -> Any:
     return value
 
 
+def normalize_database_url(url: str) -> str:
+    """Point a plain Postgres address at the psycopg 3 driver.
+
+    Hosts such as Render hand out ``postgres://`` or ``postgresql://`` addresses, which
+    SQLAlchemy would open with psycopg2, a driver this project does not install. An
+    address that already names a driver, and any other database, is left as it is.
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
+    return url
+
+
 class SqlStore:
     def __init__(self, url: str) -> None:
         kwargs: dict[str, Any] = {}

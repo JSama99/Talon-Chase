@@ -1,0 +1,76 @@
+{
+  "_about": "Every statement on the landing page that a reader could rely on, and what backs it. tests/test_site.py fails if the page says something not listed here, or if the backing no longer exists. 'test' is a test that must exist; 'text' is words that must still be in a file; 'owner' is a promise about how the business behaves, which only the owner can keep.",
+  "status": [{"text": "README.md", "has": "not yet used by a broker"}],
+  "what-it-does": [
+    {"test": "tests/test_acceptance.py::test_three_attempts_then_escalation_and_no_fourth_send"},
+    {"test": "tests/test_acceptance.py::test_evidence_chain_verifies_and_detects_tamper_at_index"}
+  ],
+  "recorded": [
+    {"test": "tests/test_site.py::test_the_recorded_chases_are_what_the_engine_does_today"},
+    {"text": "README.md", "has": "no text line, language model or TMS integration"}
+  ],
+  "rules-tested": [{"text": "README.md", "has": "Each has a test in `tests/test_acceptance.py`"}],
+  "rule-contacts": [{"test": "tests/test_acceptance.py::test_new_reply_address_is_not_adopted"}],
+  "rule-money": [{"test": "tests/test_acceptance.py::test_bank_change_message_is_held_without_reply"}],
+  "rule-exceptions": [{"test": "tests/test_acceptance.py::test_exception_notes_never_filed_clean"}],
+  "rule-sensitive": [{"test": "tests/test_acceptance.py::test_outbound_never_contains_rate_or_customer"}],
+  "rule-quiet": [
+    {"test": "tests/test_acceptance.py::test_quiet_hours_respected_in_carrier_timezone"},
+    {"test": "tests/test_site.py::test_the_hours_on_the_page_are_the_default_schedule"}
+  ],
+  "rule-three": [{"test": "tests/test_acceptance.py::test_three_attempts_then_escalation_and_no_fourth_send"}],
+  "rule-consent": [
+    {"test": "tests/test_acceptance.py::test_sms_requires_consent_and_honors_stop"},
+    {"test": "tests/test_app.py::test_texts_after_stop_come_back_only_with_written_consent"}
+  ],
+  "rule-switch": [
+    {"test": "tests/test_acceptance.py::test_kill_switch_stops_all_outbound"},
+    {"test": "tests/test_app.py::test_anyone_can_stop_messages_but_only_the_owner_starts_them"}
+  ],
+  "screens": [
+    {"test": "tests/test_app.py::test_needs_you_lists_every_open_escalation_oldest_first"},
+    {"test": "tests/test_app.py::test_load_page_tells_the_story_and_offers_the_call"},
+    {"test": "tests/test_site.py::test_the_screenshots_are_listed_with_how_to_retake_them"}
+  ],
+  "signin": [{"test": "tests/test_app.py::test_sign_in_with_an_emailed_link"}],
+  "evidence": [{"test": "tests/test_acceptance.py::test_evidence_chain_verifies_and_detects_tamper_at_index"}],
+  "verifier": [
+    {"test": "tests/test_verify_tool.py::test_standalone_verifier_agrees_and_detects_tamper"},
+    {"test": "tests/test_app.py::test_documents_and_evidence_download"}
+  ],
+  "built-chase": [
+    {"test": "tests/test_acceptance.py::test_happy_path_closes_with_passed_check_and_writeback"},
+    {"test": "tests/test_acceptance.py::test_quiet_hours_respected_in_carrier_timezone"}
+  ],
+  "built-email": [
+    {"text": "README.md", "has": "Email goes through Resend"},
+    {"test": "tests/test_resend.py::test_send_builds_the_documented_request"}
+  ],
+  "built-upload": [
+    {"test": "tests/test_api.py::test_upload_page_and_upload"},
+    {"text": "docs/UI.md", "has": "shows the load number and nothing else about the load"}
+  ],
+  "built-screens": [{"test": "tests/test_app.py::test_the_preview_renders_every_screen"}],
+  "built-evidence": [{"test": "tests/test_verify_tool.py::test_standalone_verifier_agrees_and_detects_tamper"}],
+  "notyet-reader": [
+    {"text": "README.md", "has": "It says nothing about how well a real model reads real PODs"},
+    {"test": "tests/test_engine_more.py::test_a_file_the_stand_in_reader_cannot_read_goes_to_a_person"}
+  ],
+  "notyet-tms": [
+    {"text": "README.md", "has": "no text line, language model or TMS integration"},
+    {"test": "tests/test_acceptance.py::test_adapter_outage_falls_back_to_packet_email"}
+  ],
+  "notyet-texts": [{"text": "README.md", "has": "no text line, language model or TMS integration"}],
+  "notyet-holidays": [{"text": "README.md", "has": "The schedule knows weekends and quiet hours, not holidays"}],
+  "pilot-plan": [{"text": "docs/VALIDATION.md", "has": "Two brokers, two weeks"}],
+  "pilot-mailbox": [{"text": "docs/VALIDATION.md", "has": "`pods@` mailbox"}],
+  "pilot-report": [
+    {"text": "docs/VALIDATION.md", "has": "Share of PODs collected with no human touch"},
+    {"text": "docs/VALIDATION.md", "has": "Median hours from delivery to checked POD"},
+    {"text": "docs/VALIDATION.md", "has": "Documents misfiled (target: zero)"},
+    {"text": "docs/VALIDATION.md", "has": "Exceptions caught"},
+    {"text": "docs/VALIDATION.md", "has": "Carrier complaints"}
+  ],
+  "pilot-price": [{"owner": "No price has been decided. Change this line when one is."}],
+  "privacy": [{"owner": "Signup details are used only to reply about the pilot, never shared, and deleted on request."}]
+}

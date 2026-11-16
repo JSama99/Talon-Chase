@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talon Chase: stop chasing carriers for PODs</title>
+<meta name="description" content="Talon Chase asks carriers for the signed proof of delivery, follows up on a schedule, and hands the load to a person when it needs one. Pilot stage: looking for the first two freight brokerages.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src https://example.invalid; form-action https://example.invalid; base-uri 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#ffd200">
+<meta property="og:title" content="Talon Chase: stop chasing carriers for PODs">
+<meta property="og:description" content="Asks the carrier for the POD, follows up on a schedule, hands the load to you when it needs a person. Pilot stage.">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<p class="status" data-claim="status"><span>Pilot stage</span><span>Not yet used by a brokerage</span><span>Looking for the first two</span></p>
+
+<header class="wrap top">
+  <a class="brand" href="#top" aria-label="Talon Chase, top of page"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">Talon Chase</span></a>
+  <nav aria-label="On this page">
+    <a class="nav-quiet" href="#rules">Safeguards</a>
+    <a class="nav-quiet" href="#stands">Where it stands</a>
+    <a class="btn" href="#pilot">Ask for a pilot</a>
+  </nav>
+</header>
+
+<main id="main">
+
+<section class="wrap hero" id="top">
+  <div class="hero-say">
+    <p class="label">For freight brokerages with 5 to 50 people</p>
+    <h1>Stop chasing carriers for PODs.</h1>
+    <p class="lede" data-claim="what-it-does">Talon Chase asks the carrier for the signed proof of delivery, follows up on a schedule, and hands the load to you when it needs a person. Every step goes on a record you can check.</p>
+    <div class="hero-go">
+      <a class="btn" href="#pilot">Ask for a pilot</a>
+      <a class="more" href="#rules">What it will never do</a>
+    </div>
+  </div>
+
+  <div class="sim" id="chase">
+    <div class="sim-head">
+      <h2>Run a chase</h2>
+      <p class="label">Recorded from the engine</p>
+    </div>
+<!-- runs:start -->
+    <fieldset class="pick"><legend class="label">The load is marked delivered</legend>
+      <div class="pick-list">
+        <input type="radio" name="d" id="d-tue-afternoon" checked><label for="d-tue-afternoon">Tuesday 2:00 pm</label>
+        <input type="radio" name="d" id="d-fri-afternoon"><label for="d-fri-afternoon">Friday 4:30 pm</label>
+        <input type="radio" name="d" id="d-tue-night"><label for="d-tue-night">Tuesday 9:15 pm</label>
+      </div>
+    </fieldset>
+    <fieldset class="pick"><legend class="label">The carrier</legend>
+      <div class="pick-list">
+        <input type="radio" name="c" id="c-silent" checked><label for="c-silent">Never answers</label>
+        <input type="radio" name="c" id="c-promise"><label for="c-promise">Says “will send tomorrow”</label>
+        <input type="radio" name="c" id="c-clean"><label for="c-clean">Sends a signed POD</label>
+        <input type="radio" name="c" id="c-unsigned"><label for="c-unsigned">Sends it unsigned first</label>
+        <input type="radio" name="c" id="c-damage"><label for="c-damage">POD has a damage note</label>
+        <input type="radio" name="c" id="c-bank"><label for="c-bank">Asks to change bank details</label>
+      </div>
+    </fieldset>
+    <div class="runs">
+      <article class="run d-tue-afternoon c-silent is-default" aria-label="Delivered Tuesday 2:00 pm. Carrier: Never answers">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 5:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Texted the driver</span><span class="d">+13125550142</span></div></li>
+          <li class=""><time>Wed 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Did not text</span><span class="d">no consent on file</span></div></li>
+          <li class=""><time>Wed 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked again</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Thu 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked a third time, copying you</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Fri 2:00 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>No reply after 3 requests</span></p>
+        <p class="facts">4 messages to the carrier · 14 entries on the record · chain verifies · seal df424c852f3029d4</p>
+      </article>
+      <article class="run d-tue-afternoon c-promise" aria-label="Delivered Tuesday 2:00 pm. Carrier: Says “will send tomorrow”">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Did not text</span><span class="d">no consent on file</span></div></li>
+          <li class=""><time>Wed 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked again</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 5:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Wed 5:00 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Wed 5:00 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:8cbf9264d430</span></div></li>
+          <li class="good"><time>Wed 5:00 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">2 messages to the carrier · 24 entries on the record · chain verifies · seal b63781ef8f98dca1</p>
+      </article>
+      <article class="run d-tue-afternoon c-clean" aria-label="Delivered Tuesday 2:00 pm. Carrier: Sends a signed POD">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:8cbf9264d430</span></div></li>
+          <li class="good"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">1 message to the carrier · 18 entries on the record · chain verifies · seal 23f690ab29ba8634</p>
+      </article>
+      <article class="run d-tue-afternoon c-unsigned" aria-label="Delivered Tuesday 2:00 pm. Carrier: Sends it unsigned first">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: not signed, asked again</span></div></li>
+          <li class=""><time>Tue 3:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Tue 3:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Tue 3:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:8cbf9264d430</span></div></li>
+          <li class="good"><time>Tue 3:40 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">2 messages to the carrier · 28 entries on the record · chain verifies · seal 909c1b2273da1be0</p>
+      </article>
+      <article class="run d-tue-afternoon c-damage" aria-label="Delivered Tuesday 2:00 pm. Carrier: POD has a damage note">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: note found</span><span class="d">Receiver wrote “2 cartons damaged”</span></div></li>
+          <li class="bad"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>POD has a note: shortage, damage, refusal or date</span></p>
+        <p class="facts">1 message to the carrier · 13 entries on the record · chain verifies · seal 5202eb8b2e43a802</p>
+      </article>
+      <article class="run d-tue-afternoon c-bank" aria-label="Delivered Tuesday 2:00 pm. Carrier: Asks to change bank details">
+        <ol class="tl">
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Tue 2:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Tue 2:40 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Held the message and handed it to you</span><span class="d">Held: mentions payment details, or unknown sender</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>Held: mentions payment details, or unknown sender</span></p>
+        <p class="facts">1 message to the carrier · 9 entries on the record · chain verifies · seal 52b3e7f7d0485acf</p>
+      </article>
+      <article class="run d-fri-afternoon c-silent" aria-label="Delivered Friday 4:30 pm. Carrier: Never answers">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 7:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Texted the driver</span><span class="d">+13125550142</span></div></li>
+          <li class=""><time>Mon 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Did not text</span><span class="d">no consent on file</span></div></li>
+          <li class=""><time>Mon 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked again</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Mon 12:00 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked a third time, copying you</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Tue 12:00 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>No reply after 3 requests</span></p>
+        <p class="facts">4 messages to the carrier · 14 entries on the record · chain verifies · seal a73acb7872b16524</p>
+      </article>
+      <article class="run d-fri-afternoon c-promise" aria-label="Delivered Friday 4:30 pm. Carrier: Says “will send tomorrow”">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Sat 7:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Sat 7:30 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Sat 7:30 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:08dadb9fa87d</span></div></li>
+          <li class="good"><time>Sat 7:30 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">1 message to the carrier · 21 entries on the record · chain verifies · seal a37ba5e1ad4f259f</p>
+      </article>
+      <article class="run d-fri-afternoon c-clean" aria-label="Delivered Friday 4:30 pm. Carrier: Sends a signed POD">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:08dadb9fa87d</span></div></li>
+          <li class="good"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">1 message to the carrier · 18 entries on the record · chain verifies · seal 425d302a628d12cd</p>
+      </article>
+      <article class="run d-fri-afternoon c-unsigned" aria-label="Delivered Friday 4:30 pm. Carrier: Sends it unsigned first">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: not signed, asked again</span></div></li>
+          <li class=""><time>Fri 6:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Fri 6:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Fri 6:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:08dadb9fa87d</span></div></li>
+          <li class="good"><time>Fri 6:10 pm</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">2 messages to the carrier · 28 entries on the record · chain verifies · seal 162418f0c2f6e113</p>
+      </article>
+      <article class="run d-fri-afternoon c-damage" aria-label="Delivered Friday 4:30 pm. Carrier: POD has a damage note">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: note found</span><span class="d">Receiver wrote “2 cartons damaged”</span></div></li>
+          <li class="bad"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>POD has a note: shortage, damage, refusal or date</span></p>
+        <p class="facts">1 message to the carrier · 13 entries on the record · chain verifies · seal d034583f0e6b7ecf</p>
+      </article>
+      <article class="run d-fri-afternoon c-bank" aria-label="Delivered Friday 4:30 pm. Carrier: Asks to change bank details">
+        <ol class="tl">
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Fri 4:30 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Fri 5:10 pm</time><span class="g" aria-hidden="true">!</span><div><span class="t">Held the message and handed it to you</span><span class="d">Held: mentions payment details, or unknown sender</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>Held: mentions payment details, or unknown sender</span></p>
+        <p class="facts">1 message to the carrier · 9 entries on the record · chain verifies · seal 0d8cd45c7d64b1fd</p>
+      </article>
+      <article class="run d-tue-night c-silent" aria-label="Delivered Tuesday 9:15 pm. Carrier: Never answers">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 10:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Texted the driver</span><span class="d">+13125550142</span></div></li>
+          <li class=""><time>Thu 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Did not text</span><span class="d">no consent on file</span></div></li>
+          <li class=""><time>Thu 8:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked again</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Fri 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked a third time, copying you</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Sat 7:00 am</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>No reply after 3 requests</span></p>
+        <p class="facts">4 messages to the carrier · 14 entries on the record · chain verifies · seal a58748f3cbaaa406</p>
+      </article>
+      <article class="run d-tue-night c-promise" aria-label="Delivered Tuesday 9:15 pm. Carrier: Says “will send tomorrow”">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 7:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Thu 8:10 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Did not text</span><span class="d">no consent on file</span></div></li>
+          <li class=""><time>Thu 8:10 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked again</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Thu 10:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Thu 10:00 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Thu 10:00 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:bbafc3371192</span></div></li>
+          <li class="good"><time>Thu 10:00 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">2 messages to the carrier · 24 entries on the record · chain verifies · seal 4102f02a6116f00d</p>
+      </article>
+      <article class="run d-tue-night c-clean" aria-label="Delivered Tuesday 9:15 pm. Carrier: Sends a signed POD">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 7:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:bbafc3371192</span></div></li>
+          <li class="good"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">1 message to the carrier · 18 entries on the record · chain verifies · seal 94ed8448841590a3</p>
+      </article>
+      <article class="run d-tue-night c-unsigned" aria-label="Delivered Tuesday 9:15 pm. Carrier: Sends it unsigned first">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 7:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: not signed, asked again</span></div></li>
+          <li class=""><time>Wed 8:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="good"><time>Wed 8:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Checked the document: good</span><span class="d">Right load, signed, dated</span></div></li>
+          <li class="good"><time>Wed 8:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Filed in your system</span><span class="d">Receipt fake-tms:TC-300001:bbafc3371192</span></div></li>
+          <li class="good"><time>Wed 8:40 am</time><span class="g" aria-hidden="true">✓</span><div><span class="t">Ready to invoice</span></div></li>
+        </ol>
+        <p class="stamp filed"><strong>Filed</strong><span>Ready to invoice</span></p>
+        <p class="facts">2 messages to the carrier · 28 entries on the record · chain verifies · seal f44dfd19a3f33ced</p>
+      </article>
+      <article class="run d-tue-night c-damage" aria-label="Delivered Tuesday 9:15 pm. Carrier: POD has a damage note">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 7:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied with a file</span><span class="d">dispatch@redlinetrucking.example · pod.pdf</span></div></li>
+          <li class="bad"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">!</span><div><span class="t">Checked the document: note found</span><span class="d">Receiver wrote “2 cartons damaged”</span></div></li>
+          <li class="bad"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">!</span><div><span class="t">Stopped and handed to you</span><span class="d">Not filed. Nothing more will be sent to the carrier until you decide.</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>POD has a note: shortage, damage, refusal or date</span></p>
+        <p class="facts">1 message to the carrier · 13 entries on the record · chain verifies · seal 65a01aa22e690f8d</p>
+      </article>
+      <article class="run d-tue-night c-bank" aria-label="Delivered Tuesday 9:15 pm. Carrier: Asks to change bank details">
+        <ol class="tl">
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Load received from your system</span></div></li>
+          <li class=""><time>Tue 9:15 pm</time><span class="g" aria-hidden="true">·</span><div><span class="t">Started asking for the POD</span></div></li>
+          <li class=""><time>Wed 7:00 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Asked the dispatcher by email</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class=""><time>Wed 7:40 am</time><span class="g" aria-hidden="true">·</span><div><span class="t">Carrier replied</span><span class="d">dispatch@redlinetrucking.example</span></div></li>
+          <li class="bad"><time>Wed 7:40 am</time><span class="g" aria-hidden="true">!</span><div><span class="t">Held the message and handed it to you</span><span class="d">Held: mentions payment details, or unknown sender</span></div></li>
+        </ol>
+        <p class="stamp person"><strong>Needs you</strong><span>Held: mentions payment details, or unknown sender</span></p>
+        <p class="facts">1 message to the carrier · 9 entries on the record · chain verifies · seal 7ae6221177185a5d</p>
+      </article>
+    </div>
+<!-- runs:end -->
+    <div class="sim-foot">
+      <p data-claim="recorded">These are recordings of the real engine, not drawings. The carrier is a sample, and the email, text line, document reader and TMS behind it are stand-ins. Times are the carrier&rsquo;s local time, on the default schedule, which each brokerage can change.</p>
+<!-- email:start -->
+      <details>
+        <summary>Read the email the carrier gets</summary>
+        <pre>Subject: proof of delivery for load TC-300001
+
+Hello,
+
+Please send the signed proof of delivery for load TC-300001.
+
+Reply to this email with the document attached, or upload it here:
+https://(your address)/u/(one-time link)
+
+This message was sent by the automated assistant for Peachtree Logistics. To reach a person, write to ops@peachtreelogistics.example.</pre>
+      </details>
+<!-- email:end -->
+    </div>
+  </div>
+</section>
+
+<section class="band wash" id="rules">
+  <div class="wrap">
+    <div class="band-head rise">
+      <p class="label">Safeguards</p>
+      <h2>What it will never do.</h2>
+      <p data-claim="rules-tested">A machine that emails your carriers has to be boring and careful. These rules are in the code, and each one has an automated test that fails if it is broken.</p>
+    </div>
+    <ol class="rules">
+      <li data-claim="rule-contacts"><div><h3>Write to an address you do not know</h3><p>It writes only to contacts on your carrier record. A new address that shows up in a reply is not used until one of your people approves it.</p></div></li>
+      <li data-claim="rule-money"><div><h3>Answer a message about money</h3><p>Bank details, remit-to, factoring, wire, ACH, a notice of assignment: no reply is sent. The message is held and goes to a person, attachment and all.</p></div></li>
+      <li data-claim="rule-exceptions"><div><h3>File a POD with a note as clean</h3><p>Shortage, damage, refusal or a seal note on the POD always goes to a person, whatever else is right with the document.</p></div></li>
+      <li data-claim="rule-sensitive"><div><h3>Tell a carrier more than the load number</h3><p>A request carries the load number and nothing else about the load. A guard refuses any message containing the rate, the pickup number, or your customer&rsquo;s or consignee&rsquo;s name.</p></div></li>
+      <li data-claim="rule-quiet"><div><h3>Send at night</h3><p>Nothing goes out between 8 pm and 7 am in the carrier&rsquo;s own time zone. A load delivered at 9 pm is asked about at 7 the next morning.</p></div></li>
+      <li data-claim="rule-three"><div><h3>Ask a fourth time</h3><p>Three requests, then it stops and hands you the load with the carrier&rsquo;s phone numbers and the full history.</p></div></li>
+      <li data-claim="rule-consent"><div><h3>Text someone who has not agreed</h3><p>Texts need consent on file. STOP means stop, and only written consent recorded by one of your people turns texts back on.</p></div></li>
+      <li data-claim="rule-switch"><div><h3>Keep sending after you say stop</h3><p>One switch stops every message for your brokerage. Anyone on your team can turn it off. Queued messages are held, not lost.</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band" id="screens">
+  <div class="wrap split">
+    <div class="split-say rise">
+      <p class="label">Your side</p>
+      <h2>Two minutes a day.</h2>
+      <p data-claim="screens">Open it, clear a short list, leave. Each row says what happened in plain words and gives you the carrier&rsquo;s phone number. Open a load to see every message, the document, and what was done about it.</p>
+      <p class="muted" data-claim="signin">No passwords. You sign in with a link sent to your email.</p>
+    </div>
+    <figure class="shot rise">
+      <picture>
+        <source media="(max-width: 719px)" srcset="img/needs-you-phone.webp" width="800" height="1400">
+        <source srcset="img/needs-you-1200.webp 1200w, img/needs-you.webp 2400w" sizes="(min-width: 1000px) 640px, 92vw" width="1200" height="760">
+        <img src="img/needs-you-1200.webp" width="1200" height="760" loading="lazy" decoding="async" alt="The Needs you screen: four loads need a person. One had no reply after 3 requests, one was held because it mentions payment details, one POD has a note about 2 damaged cartons, and one reply came from a new address. Each row shows the carrier's phone number.">
+      </picture>
+      <figcaption>The product&rsquo;s own screen, with sample data.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="band wash" id="record">
+  <div class="wrap split flip">
+    <div class="split-say rise">
+      <p class="label">The record</p>
+      <h2>When someone asks &ldquo;did you ever get it?&rdquo;</h2>
+      <p data-claim="evidence">Every request, reply, document, check and filing is added to a chain for that load. Each entry is sealed with a fingerprint of the one before it, so an entry changed later breaks the chain and the check says where.</p>
+      <p class="muted" data-claim="verifier">You can export the record for any load and check it yourself, with a small script that needs nothing from us.</p>
+    </div>
+<!-- chain:start -->
+    <ol class="chain rise" aria-label="The first entries on one load's record">
+      <li><span class="n">00</span><span class="k">load.received</span><span class="h">b6f2a62c8ce19e75a806d88542b414dd6ffe2028…</span></li>
+      <li><span class="n">01</span><span class="k">chase.opened</span><span class="h">ff4f616af995e8ef04d03528fed4172de4d35da9…</span></li>
+      <li><span class="n">02</span><span class="k">attempt.queued</span><span class="h">160f96d05acd30c921dfea750c43dbd157bf055d…</span></li>
+      <li><span class="n">03</span><span class="k">chase.state</span><span class="h">32ff88320a9ac54577d61c3527705533fce88187…</span></li>
+      <li><span class="n">04</span><span class="k">message.sent</span><span class="h">d1ef8a520c34ad9f1956f730a045c712db261fe3…</span></li>
+    </ol>
+<!-- chain:end -->
+  </div>
+</section>
+
+<section class="band" id="stands">
+  <div class="wrap">
+    <div class="band-head rise">
+      <p class="label">Where it stands</p>
+      <h2>What works today, and what does not.</h2>
+      <p>You should know exactly what you would be trying.</p>
+    </div>
+    <div class="stand">
+      <div>
+        <h3><span class="tag yes">Built</span> Working now</h3>
+        <ul>
+          <li data-claim="built-chase"><strong>The chase itself</strong><span>The schedule, quiet hours, weekends, three requests, the hand-off to a person, and every safeguard above.</span></li>
+          <li data-claim="built-email"><strong>Email, both ways</strong><span>Requests go out and replies, attachments and bounces come back in, through Resend.</span></li>
+          <li data-claim="built-upload"><strong>A carrier upload page</strong><span>One link, one button, made for a driver&rsquo;s phone. It shows the load number and nothing else.</span></li>
+          <li data-claim="built-screens"><strong>Your screens</strong><span>The list of what needs you, the story of each load, settings, and the off switch.</span></li>
+          <li data-claim="built-evidence"><strong>The record</strong><span>The chain for every load, the export, and the script that checks it.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3><span class="tag">Not yet</span> Not built</h3>
+        <ul>
+          <li data-claim="notyet-reader"><strong>Reading the POD</strong><span>The checks are built and tested on stand-in documents, not on real PODs. Until a reader has been tested on real ones, every document that arrives comes to you to look at.</span></li>
+          <li data-claim="notyet-tms"><strong>Filing into your TMS</strong><span>There is no TMS connection yet. What exists is an emailed packet, which works with any TMS.</span></li>
+          <li data-claim="notyet-texts"><strong>Text messages</strong><span>The consent rules are built. No text line is connected, so the texts in the recordings above went to a stand-in.</span></li>
+          <li data-claim="notyet-holidays"><strong>Public holidays</strong><span>The schedule knows weekends and quiet hours. It does not know holidays.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band wash" id="pilot">
+  <div class="wrap pilot">
+    <div class="pilot-say rise">
+      <p class="label">The pilot</p>
+      <h2>Two brokerages. Two weeks.</h2>
+      <p data-claim="pilot-plan">We are looking for the first two brokerages to run it on real loads. If late paperwork is holding up your invoices, we would like to talk.</p>
+      <dl class="terms">
+        <div><dt>What you set up</dt><dd data-claim="pilot-mailbox">A mailbox for PODs, such as pods@ your domain.</dd></div>
+        <div><dt>What you get at the end</dt><dd data-claim="pilot-report">The numbers: how many PODs came in with no one touching them, the median hours from delivery to a checked POD, documents misfiled (the target is zero), exceptions caught, and any carrier complaints.</dd></div>
+        <div><dt>What it costs</dt><dd data-claim="pilot-price">The price is not set. Part of the pilot is finding out what this is worth to you.</dd></div>
+      </dl>
+    </div>
+
+    <form class="form" id="pilot-form" method="post" action="https://example.invalid/set-SIGNUP_FORM_URL" accept-charset="utf-8">
+      <div class="field">
+        <label class="label" for="f-email">Work email</label>
+        <input id="f-email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label class="label" for="f-company">Brokerage</label>
+        <input id="f-company" name="company" type="text" autocomplete="organization" required>
+      </div>
+      <div class="field">
+        <label class="label" for="f-name">Your name</label>
+        <input id="f-name" name="name" type="text" autocomplete="name">
+      </div>
+      <div class="field">
+        <label class="label" for="f-loads">Loads delivered a month</label>
+        <select id="f-loads" name="loads_per_month">
+          <option value="">Choose one</option>
+          <option>Under 100</option>
+          <option>100 to 500</option>
+          <option>500 to 2,000</option>
+          <option>Over 2,000</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="f-tms">Your TMS</label>
+        <input id="f-tms" name="tms" type="text" list="tms-list" autocomplete="off">
+        <datalist id="tms-list">
+          <option value="AscendTMS"></option>
+          <option value="Descartes Aljex"></option>
+          <option value="Tai Software"></option>
+          <option value="Rose Rocket"></option>
+          <option value="McLeod"></option>
+          <option value="Spreadsheets, no TMS"></option>
+        </datalist>
+      </div>
+      <div class="field">
+        <label class="label" for="f-note">How do PODs reach you today? (optional)</label>
+        <textarea id="f-note" name="note" rows="3"></textarea>
+      </div>
+      <p class="trap" aria-hidden="true"><label>Leave this empty <input name="_gotcha" type="text" tabindex="-1" autocomplete="off"></label></p>
+      <button class="btn" type="submit">Ask for a pilot</button>
+      <p class="note ok" id="pilot-ok" role="status" tabindex="-1" hidden>Got it. We will reply by email.</p>
+      <p class="note err" id="pilot-err" role="alert" tabindex="-1" hidden>That did not go through. Nothing was lost: please try again in a minute.</p>
+      <p class="fine" data-claim="privacy">We use what you send only to reply to you about the pilot. No mailing list, and it is not sold or shared. Reply to our email at any time and we will delete it.</p>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>Talon Chase is built by TalonSight Technologies, Atlanta, Georgia.</p>
+    <p><a href="https://github.com/JSama99/Talon-Chase">The code and its tests are public</a></p>
+  </div>
+</footer>
+</body>
+</html>

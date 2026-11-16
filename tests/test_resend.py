@@ -969,3 +969,33 @@ def test_a_bounce_after_the_pod_arrived_does_not_abandon_the_filing(service):
     world.run(HOUR_MS)
     assert world.chase(load).state is ChaseState.CLOSED
     assert world.chase(load).closed_reason == "filed"
+
+
+@pytest.mark.parametrize(
+    "pasted",
+    [f" {SECRET} ", f"{SECRET}\n", f'"{SECRET}"', f"'{SECRET}'", f"RESEND_WEBHOOK_SECRET={SECRET}"],
+)
+def test_a_pasted_webhook_secret_is_cleaned_up(pasted):
+    assert main.webhook_secret({"RESEND_WEBHOOK_SECRET": pasted}) == SECRET
+
+
+@pytest.mark.parametrize(
+    ("value", "says"),
+    [
+        ("", "empty or not set"),
+        ("   ", "empty or not set"),
+        ("re_abc123", "looks like the API key"),
+        ("secret123", "starts with 'sec'"),
+        ("whsec_not*base64!", "not valid base64"),
+    ],
+)
+def test_a_bad_webhook_secret_says_what_is_wrong_without_repeating_it(value, says):
+    with pytest.raises(RuntimeError, match=says) as raised:
+        main.webhook_secret({"RESEND_WEBHOOK_SECRET": value})
+    if len(value) > 3:
+        assert value not in str(raised.value)
+
+
+def test_the_service_verifies_webhooks_with_the_cleaned_secret(monkeypatch):
+    monkeypatch.setenv("RESEND_WEBHOOK_SECRET", f" {SECRET}\n")
+    assert main.webhook_secret() == SECRET

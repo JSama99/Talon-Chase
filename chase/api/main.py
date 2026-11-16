@@ -63,6 +63,34 @@ def _broker_of(store):
     return lookup
 
 
+def webhook_secret(env: Mapping[str, str] | None = None) -> str:
+    """RESEND_WEBHOOK_SECRET, cleaned of the spaces, line breaks and quotes that pasting
+    into a dashboard or a .env file tends to add. Raises RuntimeError saying what is
+    wrong with it, without repeating the secret."""
+    env = os.environ if env is None else env
+    raw = env.get("RESEND_WEBHOOK_SECRET", "")
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    if value.startswith("RESEND_WEBHOOK_SECRET="):
+        value = value.split("=", 1)[1].strip().strip("\"'")
+    prefix = "RESEND_WEBHOOK_SECRET must be the webhook's signing secret (whsec_...): "
+    if not value:
+        problem = "it is empty or not set"
+    elif value.startswith("re_"):
+        problem = "this looks like the API key (re_...), not the webhook's signing secret"
+    elif not value.startswith("whsec_"):
+        problem = f"it starts with {value[:3]!r} instead of 'whsec_'"
+    elif secret_key(value) is None:
+        problem = (
+            f"the part after 'whsec_' is not valid base64 ({len(value)} characters); "
+            "copy the whole secret again"
+        )
+    else:
+        return value
+    raise RuntimeError(prefix + problem + ". Without it replies and bounces cannot be received.")
+
+
 def _resend(
     store, env: Mapping[str, str] | None = None
 ) -> tuple[EmailPort, ResendInbox | None, Identity | None]:
@@ -76,11 +104,7 @@ def _resend(
         identity = identity_from_env(env)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
-    if secret_key(env.get("RESEND_WEBHOOK_SECRET", "")) is None:
-        raise RuntimeError(
-            "RESEND_WEBHOOK_SECRET must be the webhook's signing secret (whsec_...); "
-            "without it replies and bounces cannot be received"
-        )
+    webhook_secret(env)
     client = ResendClient(api_key)
     email = ResendEmail(client, store.get_blob, identity, _broker_of(store))
     return email, ResendInbox(client), identity
@@ -135,7 +159,7 @@ def build_app():
     return create_app(
         engine,
         os.environ.get("CHASE_API_KEY", ""),
-        resend_webhook_secret=os.environ.get("RESEND_WEBHOOK_SECRET", "") if inbox else "",
+        resend_webhook_secret=webhook_secret() if inbox else "",
         resend_inbox=inbox,
         resend_inbound_domain=identity.inbound_domain if identity else "",
         login_from=os.environ.get("CHASE_LOGIN_FROM", "Talon Chase <signin@talonchase.invalid>"),

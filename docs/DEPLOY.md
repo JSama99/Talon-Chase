@@ -115,7 +115,7 @@ come from the broker's TMS through the same API (see the README's route table).
 
 | Symptom | Cause |
 | --- | --- |
-| Deploy fails at start with `RESEND_WEBHOOK_SECRET must be the webhook's signing secret` | The value is empty or not a `whsec_` secret; generate a temporary one or use Resend's. |
+| Deploy fails at start with `RESEND_WEBHOOK_SECRET must be the webhook's signing secret` | The end of the message says what is wrong: empty, the API key pasted instead, a missing `whsec_` start, or a partly copied value. Spaces, line breaks, quotes and a pasted `RESEND_WEBHOOK_SECRET=` are removed for you. |
 | Deploy fails with `set RESEND_VERIFIED_DOMAINS ...` or `RESEND_SHARED_FROM needs RESEND_INBOUND_DOMAIN` | One of the Resend settings in step 1 is missing. |
 | `CHASE_TICK_SECONDS must be ...` | It must be `0`, or between `5` and `3600`. |
 | `401` on `/webhooks/resend` | The webhook secret in Render is still the temporary one, or differs from Resend's. |

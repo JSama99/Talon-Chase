@@ -10,6 +10,8 @@ an API key is set ([docs/EMAIL.md](docs/EMAIL.md)); without one, and for texts,
 the language model and the TMS, everything sits behind interfaces with in-memory
 stand-ins. See [What is not built](#what-is-not-built).
 
+Changing the code, as a person or a coding agent: read [AGENTS.md](AGENTS.md) first.
+
 ## Quick start
 
 ```bash

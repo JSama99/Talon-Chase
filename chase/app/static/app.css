@@ -255,6 +255,7 @@ a.row:hover { background: var(--wash); }
   .row-load { width: auto; }
   .row-body { flex-basis: 100%; order: 3; }
   .row-wait, .row-phone { width: auto; }
+  .row-go { display: none; } /* the whole row is the link; the arrow wrapped onto its own line */
   .big-number { font-size: 64px; line-height: 60px; }
   .inline-form { grid-template-columns: 1fr; }
   .unmatched-row { flex-wrap: wrap; }

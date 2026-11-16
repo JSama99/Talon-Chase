@@ -59,9 +59,6 @@ class Extraction:
         )
 
 
-UNREADABLE = Extraction(doc_type=DocType.OTHER, readable=False, confidence=100)
-
-
 @dataclass(frozen=True)
 class CheckOutcome:
     result: CheckResult

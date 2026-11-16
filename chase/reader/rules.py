@@ -3,6 +3,8 @@
 ``RuleBasedClassifier`` labels a carrier's reply from keywords.
 ``StandInReader`` treats a document's bytes as JSON describing what a real
 reader would extract from the image, which is how the synthetic pack models PODs.
+Anything else (a real PDF or photo) it cannot read, and says so with zero confidence,
+so the document goes to a person and the carrier is not told their copy is bad.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from chase.domain.checks import UNREADABLE, Extraction
+from chase.domain.checks import Extraction
 from chase.domain.models import Inbound
 from chase.ports import Classification, ReplyLabel
 
@@ -48,12 +50,17 @@ class RuleBasedClassifier:
         return Classification(ReplyLabel.UNKNOWN, 50)
 
 
+# The stand-in cannot read a real file. It must not claim it did: zero confidence sends
+# the document to a person, where "unreadable" would tell the carrier their copy is bad.
+CANNOT_READ = Extraction(readable=False, confidence=0)
+
+
 class StandInReader:
     def read(self, filename: str, content: bytes) -> Extraction:
         try:
             data = json.loads(content.decode("utf-8"))
             if not isinstance(data, dict):
-                return UNREADABLE
+                return CANNOT_READ
             return Extraction.from_dict(data)
         except (ValueError, UnicodeDecodeError, TypeError):
-            return UNREADABLE
+            return CANNOT_READ

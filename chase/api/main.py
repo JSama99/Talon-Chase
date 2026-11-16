@@ -5,10 +5,14 @@ Email is real once RESEND_API_KEY is set; without it, email goes to an in-memory
 stand-in that records what it would send and contacts no one.
 
 Environment:
-  DATABASE_URL    SQLAlchemy URL (postgresql+psycopg://... or sqlite+pysqlite:///chase.db)
+  DATABASE_URL    database address; a plain postgres:// or postgresql:// address is
+                  opened with psycopg 3. Default: sqlite+pysqlite:///chase.db
   CHASE_API_KEY   admin key, at least 16 characters
   CHASE_SECRET    signs upload links, at least 32 characters
-  CHASE_BASE_URL  public address used in upload and sign-in links
+  CHASE_BASE_URL  public address used in upload and sign-in links; on Render it
+                  defaults to RENDER_EXTERNAL_URL
+  CHASE_TICK_SECONDS  run the tick inside the service every N seconds (0, the
+                  default, leaves it to an outside scheduler calling POST /v1/tick)
   CHASE_LOGIN_FROM  sender of sign-in emails; its domain must be verified in Resend
 
 Email through Resend (see docs/EMAIL.md):
@@ -42,7 +46,7 @@ from chase.domain.models import Broker
 from chase.engine import ChaseEngine
 from chase.ports import EmailPort
 from chase.reader.rules import RuleBasedClassifier, StandInReader
-from chase.store.sql import SqlStore
+from chase.store.sql import SqlStore, normalize_database_url
 from chase.writeback.adapters import FakeApiAdapter
 
 
@@ -82,11 +86,37 @@ def _resend(
     return email, ResendInbox(client), identity
 
 
+def base_url(env: Mapping[str, str] | None = None) -> str:
+    """The public address used in links: CHASE_BASE_URL, else the address Render
+    gives the service, else the local one."""
+    env = os.environ if env is None else env
+    for key in ("CHASE_BASE_URL", "RENDER_EXTERNAL_URL"):
+        value = env.get(key, "").strip().rstrip("/")
+        if value:
+            return value
+    return "http://localhost:8000"
+
+
+def tick_seconds(env: Mapping[str, str] | None = None) -> float:
+    """CHASE_TICK_SECONDS as a number: 0 (off) or at least 5 seconds."""
+    env = os.environ if env is None else env
+    raw = env.get("CHASE_TICK_SECONDS", "").strip() or "0"
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"CHASE_TICK_SECONDS must be a number, not {raw!r}") from exc
+    if value != 0 and not 5 <= value <= 3600:
+        raise RuntimeError("CHASE_TICK_SECONDS must be 0 (off) or between 5 and 3600")
+    return value
+
+
 def build_app():
     secret = os.environ.get("CHASE_SECRET", "")
     if len(secret) < 32:
         raise RuntimeError("CHASE_SECRET must be set to at least 32 characters")
-    store = SqlStore(os.environ.get("DATABASE_URL", "sqlite+pysqlite:///chase.db"))
+    store = SqlStore(
+        normalize_database_url(os.environ.get("DATABASE_URL", "sqlite+pysqlite:///chase.db"))
+    )
     if store.engine.dialect.name == "sqlite":
         store.create_schema()  # Postgres is set up by `alembic upgrade head`
     email, inbox, identity = _resend(store)
@@ -100,7 +130,7 @@ def build_app():
         reader=StandInReader(),
         adapters=[FakeApiAdapter()],
         secret=secret.encode(),
-        base_url=os.environ.get("CHASE_BASE_URL", "http://localhost:8000"),
+        base_url=base_url(),
     )
     return create_app(
         engine,
@@ -109,6 +139,7 @@ def build_app():
         resend_inbox=inbox,
         resend_inbound_domain=identity.inbound_domain if identity else "",
         login_from=os.environ.get("CHASE_LOGIN_FROM", "Talon Chase <signin@talonchase.invalid>"),
+        tick_every_s=tick_seconds(),
     )
 
 

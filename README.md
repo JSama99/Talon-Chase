@@ -107,7 +107,8 @@ synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
 migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
 ontology/      generated JSON Schema and JSON-LD context
 tools/         verify_evidence.py, a standalone verifier with no project imports
-docs/          ONTOLOGY.md (generated), EMAIL.md, EVIDENCE.md, OUTBOX.md, UI.md, VALIDATION.md
+docs/          ONTOLOGY.md (generated), DEPLOY.md, EMAIL.md, EVIDENCE.md, LOCAL_SETUP.md,
+               OUTBOX.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -120,6 +121,10 @@ docker compose up --build
 The Docker files were written but **not run**: the build environment had no Docker
 daemon. The same service was exercised through its routes in `tests/test_api.py`, and
 the migration was run against Postgres 16 in `tests/test_migrations.py`.
+
+Hosted: `render.yaml` deploys the service and Postgres on Render, with the tick run
+inside the service; see [docs/DEPLOY.md](docs/DEPLOY.md). Locally with Resend and a
+tunnel: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 Without Docker:
 
@@ -223,6 +228,7 @@ real PODs. That needs labelled documents from a pilot broker.
 ## Next steps
 
 1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
-2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md).
+2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md), then deploy:
+   [docs/DEPLOY.md](docs/DEPLOY.md).
 3. One at a time: text messages (Twilio), document reader with labelled PODs, first
    TMS adapter.

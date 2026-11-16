@@ -9,5 +9,6 @@ COPY alembic.ini ./
 RUN pip install --no-cache-dir ".[postgres]" && useradd --system --uid 10001 chase
 USER chase
 EXPOSE 8000
+# PORT comes from the host (Render sets it); 8000 otherwise.
 # One worker: the engine also takes a database lock, so more workers are safe but not faster.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn chase.api.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn chase.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

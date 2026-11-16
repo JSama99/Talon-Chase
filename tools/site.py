@@ -400,6 +400,11 @@ def _inline(page: str) -> str:
         )
     )
     page = re.sub(r"<meta http-equiv=\"Content-Security-Policy\"[^>]*>\n", "", page)
+    page = page.replace(
+        '      <button class="btn" type="submit">',
+        '      <p class="note">Preview copy: this form is not connected.</p>\n'
+        '      <button class="btn" type="submit">',
+    )
     page = re.sub(r"<link rel=\"(?:preload|icon)\"[^>]*>\n", "", page)
     page = page.replace('<link rel="stylesheet" href="site.css">', f"<style>\n{css}</style>")
     page = page.replace(

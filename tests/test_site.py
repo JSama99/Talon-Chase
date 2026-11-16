@@ -315,6 +315,7 @@ def test_the_one_file_preview_needs_nothing_else(tmp_path):
     assert [p.name for p in out.iterdir()] == ["index.html"]
     page = (out / "index.html").read_text()
     assert "<style>" in page and "font/woff2;base64," in page and "image/webp;base64," in page
+    assert "this form is not connected" in page and "not connected" not in PAGE
 
 
 def test_the_command_line_checks_and_builds(tmp_path):

@@ -3,6 +3,8 @@ Blueprint, checked against what the code actually reads."""
 
 from __future__ import annotations
 
+import contextlib
+import io
 import pathlib
 import re
 import time
@@ -214,7 +216,24 @@ def test_every_setting_the_service_reads_is_provided_and_no_secret_is_committed(
     assert tick_seconds({"CHASE_TICK_SECONDS": env["CHASE_TICK_SECONDS"]["value"]}) == 60
 
 
-def test_the_placeholder_webhook_secret_in_the_deploy_guide_lets_the_service_start():
+def test_the_deploy_guide_publishes_no_webhook_secret():
+    """A secret written in the repo would let anyone sign webhook events."""
     guide = (ROOT / "docs" / "DEPLOY.md").read_text()
-    (placeholder,) = set(re.findall(r"`(whsec_[A-Za-z0-9+/=]+)`", guide))
-    assert secret_key(placeholder) is not None
+    assert re.findall(r"whsec_[A-Za-z0-9+/=]{8,}", guide) == []
+
+
+def test_the_guides_command_makes_a_fresh_secret_the_service_accepts():
+    guide = (ROOT / "docs" / "DEPLOY.md").read_text()
+    (command,) = re.findall(r'python3 -c "(import base64, secrets; print\(.*\))"', guide)
+    first, second = (_run_print(command) for _ in range(2))
+    assert first != second
+    for value in (first, second):
+        key = secret_key(value)
+        assert value.startswith("whsec_") and key is not None and len(key) == 32
+
+
+def _run_print(code: str) -> str:
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        exec(code, {})  # the guide's own one-liner, read from the repo
+    return out.getvalue().strip()

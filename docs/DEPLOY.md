@@ -35,15 +35,22 @@ field, the error names it.
    | Key | Value |
    | --- | --- |
    | `RESEND_API_KEY` | Your `re_...` key (full access, so replies can be fetched) |
-   | `RESEND_WEBHOOK_SECRET` | For now, the placeholder `whsec_cGxhY2Vob2xkZXI=` (step 2 replaces it) |
+   | `RESEND_WEBHOOK_SECRET` | For now, a temporary secret you generate (below); step 2 replaces it |
    | `RESEND_VERIFIED_DOMAINS` | `mail.talonsight.com` |
    | `RESEND_SHARED_FROM` | `chase@mail.talonsight.com` |
    | `RESEND_INBOUND_DOMAIN` | `mail.talonsight.com` |
    | `CHASE_LOGIN_FROM` | `Talon Chase <login@mail.talonsight.com>` |
 
-   The placeholder exists because the webhook's address is not known until the service
-   exists. It is a well-formed secret, so the service starts, but no real webhook is
-   signed with it: replies are refused with `401` until step 2.
+   The webhook's address is not known until the service exists, so the first deploy
+   needs a stand-in. Generate a fresh one on your own machine for each deployment:
+
+   ```bash
+   python3 -c "import base64, secrets; print('whsec_' + base64.b64encode(secrets.token_bytes(32)).decode())"
+   ```
+
+   Never use a value written in a document or shared anywhere: whoever knows the
+   webhook secret can send the service signed events. Nobody else knows this one, so
+   until step 2 every webhook call, Resend's included, is refused with `401`.
 3. Apply. Render creates the database, builds the image, migrates, and starts the
    service. It is live when `/healthz` passes and the service shows **Live**.
 
@@ -59,7 +66,7 @@ field, the error names it.
    one for `https://<service address>/webhooks/resend` with the events
    `email.received`, `email.bounced` and `email.complained`.
 3. Copy its `whsec_...` secret into the service's **Environment** tab as
-   `RESEND_WEBHOOK_SECRET`, replacing the placeholder, and save. Render redeploys with
+   `RESEND_WEBHOOK_SECRET`, replacing the temporary one, and save. Render redeploys with
    the new value.
 
 ## 3. First broker and first sign-in
@@ -108,10 +115,10 @@ come from the broker's TMS through the same API (see the README's route table).
 
 | Symptom | Cause |
 | --- | --- |
-| Deploy fails at start with `RESEND_WEBHOOK_SECRET must be the webhook's signing secret` | The value is empty or not a `whsec_` secret; use the placeholder or the real one. |
+| Deploy fails at start with `RESEND_WEBHOOK_SECRET must be the webhook's signing secret` | The value is empty or not a `whsec_` secret; generate a temporary one or use Resend's. |
 | Deploy fails with `set RESEND_VERIFIED_DOMAINS ...` or `RESEND_SHARED_FROM needs RESEND_INBOUND_DOMAIN` | One of the Resend settings in step 1 is missing. |
 | `CHASE_TICK_SECONDS must be ...` | It must be `0`, or between `5` and `3600`. |
-| `401` on `/webhooks/resend` | The webhook secret in Render is still the placeholder or differs from Resend's. |
+| `401` on `/webhooks/resend` | The webhook secret in Render is still the temporary one, or differs from Resend's. |
 | No `POST /webhooks/resend` at all | The webhook still points at the tunnel, or the events are not ticked. |
 | Links in emails point at `localhost` | `CHASE_BASE_URL` is set to a local address in Render; remove it. |
 | Chases stop moving | Logs show `scheduled tick failed`; the line after it is the cause. |

@@ -1,22 +1,29 @@
-# Deploying Talon Chase on Render
+# Deploying Talon Chase: Render and Supabase
 
-`render.yaml` at the root of the repo is a Render Blueprint. Applying it creates two
-things:
+Two pieces:
 
-| Resource | What it is |
-| --- | --- |
-| `talon-chase` | A web service built from the repo's `Dockerfile`. On every start it runs `alembic upgrade head`, then serves on the port Render gives it. It runs its own tick every 60 seconds (`CHASE_TICK_SECONDS`), so no separate scheduler is needed. |
-| `talon-chase-db` | Postgres 16, reachable only from Render services (`ipAllowList: []`). |
+| Piece | Where | What it is |
+| --- | --- | --- |
+| The service | Render, from `render.yaml` | A web service built from the repo's `Dockerfile`. On every start it runs `alembic upgrade head`, then serves on the port Render gives it. It runs its own tick every 60 seconds (`CHASE_TICK_SECONDS`), so no separate scheduler is needed. Plan `starter`: a free instance sleeps when idle, which would stop the tick. |
+| The database | Supabase | Postgres. The free plan is enough for a pilot. |
 
-Both are in the `virginia` region, the closest to the East Coast. Both are on paid
-plans (`starter` and `basic-256mb`): a free web instance sleeps when idle, which would
-stop the tick, and a free database is removed after a trial period. Check current
-prices at render.com/pricing.
+**Supabase free plan, for this app.** Free projects pause after a week with no database
+requests; the service's tick queries every minute, so a running service keeps it
+awake. Two limits matter: the database becomes read-only past 500 MB, and POD files
+are currently stored inside it (see "What is not built" in the README), so watch the
+size; and daily backups come with the paid plan. Move to Pro, or move files to object
+storage, before real broker data. Check current terms at supabase.com/pricing.
 
-**Not yet verified on Render.** The Blueprint follows Render's documentation and is
-checked by `tests/test_deploy.py` against what the code reads, but it has not been
-applied to a real Render account. The first apply is that check; if Render rejects a
-field, the error names it.
+**How the service connects.** For any Supabase host it requires TLS (unless the
+address sets `sslmode` itself), and on the transaction pooler (port 6543) it turns
+off psycopg's prepared statements, which that pooler cannot keep. Use the Session
+pooler (port 5432) anyway: the service holds long-lived connections, which is what
+it is for.
+
+**Not yet verified live.** The Blueprint follows Render's documentation and the
+connection settings follow Supabase's; both are checked by `tests/test_deploy.py`
+against the code, but neither has been applied to a real account. The first deploy
+is that check; if Render rejects a field or the connection fails, the error names it.
 
 ## Before you start
 
@@ -24,16 +31,35 @@ field, the error names it.
   [EMAIL.md](EMAIL.md)): a verified domain, receiving on, and an API key.
 - `render.yaml` is on `main`.
 - A Render account with access to the GitHub repository.
+- A Supabase account.
+
+## 0. Create the database in Supabase
+
+1. In Supabase: **New project**. Name it `talon-chase`, set a strong database password
+   (save it in your password manager; Supabase shows it once), and pick the region
+   **East US (North Virginia)**, next to Render's `virginia`.
+2. When the project is ready, click **Connect**. Under **Session pooler**, copy the
+   URI. It looks like
+   `postgresql://postgres.<project ref>:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres`.
+3. Replace `[YOUR-PASSWORD]` with the password from step 1 (brackets included). If the
+   password has `@`, `:`, `/`, `?` or `#` in it, either reset it to one without them or
+   percent-encode those characters (`@` becomes `%40`).
+
+Do not use the **Direct connection** address (`db.<ref>.supabase.co`): on the free
+plan it is reachable over IPv6 only, and the poolers are Supabase's answer for hosts
+that connect over IPv4. The Session pooler works from anywhere. Nothing else in Supabase needs setting up: the service creates its own
+tables on the first deploy.
 
 ## 1. Apply the Blueprint
 
 1. In Render: **New**, then **Blueprint**. Pick the `Talon-Chase` repository and the
-   `main` branch. Render reads `render.yaml` and lists the two resources.
-2. Render asks for the six values marked `sync: false`. Enter them as plain values; the
+   `main` branch. Render reads `render.yaml` and lists the service.
+2. Render asks for the seven values marked `sync: false`. Enter them as plain values; the
    dashboard does not need the quotes that `.env` does.
 
    | Key | Value |
    | --- | --- |
+   | `DATABASE_URL` | The Session pooler URI from step 0, with your password in it |
    | `RESEND_API_KEY` | Your `re_...` key (full access, so replies can be fetched) |
    | `RESEND_WEBHOOK_SECRET` | For now, a temporary secret you generate (below); step 2 replaces it |
    | `RESEND_VERIFIED_DOMAINS` | `mail.talonsight.com` |
@@ -51,7 +77,7 @@ field, the error names it.
    Never use a value written in a document or shared anywhere: whoever knows the
    webhook secret can send the service signed events. Nobody else knows this one, so
    until step 2 every webhook call, Resend's included, is refused with `401`.
-3. Apply. Render creates the database, builds the image, migrates, and starts the
+3. Apply. Render builds the image, creates the tables in Supabase, and starts the
    service. It is live when `/healthz` passes and the service shows **Live**.
 
 `CHASE_SECRET` and `CHASE_API_KEY` are generated by Render. Read them in the service's
@@ -71,7 +97,7 @@ field, the error names it.
 
 ## 3. First broker and first sign-in
 
-The Render database starts empty; nothing from a local `chase.db` comes across. With
+The Supabase database starts empty; nothing from a local `chase.db` comes across. With
 `URL` set to the service address and `CHASE_API_KEY` copied from Render:
 
 ```bash
@@ -107,6 +133,12 @@ come from the broker's TMS through the same API (see the README's route table).
 - **A custom domain** (for example `app.talonsight.com`): add it to the service in
   Render, set `CHASE_BASE_URL` to `https://app.talonsight.com`, and change the Resend
   webhook address to match.
+- **Database size.** In Supabase, **Reports** or **Database** shows the size. Act
+  well before 500 MB: past it the free project turns read-only and chases stop.
+- **Paused project.** If the service was stopped for a week, Supabase may have paused
+  the project; restore it from the Supabase dashboard, then restart the service.
+- **Database password.** Reset it in Supabase (**Database**, **Settings**), then
+  update `DATABASE_URL` in Render with the new one.
 - **Rotating secrets.** Change the value in the Environment tab and save; Render
   restarts the service. Rotating `CHASE_SECRET` signs everyone out and voids issued
   upload links. For the Resend values, follow the table in LOCAL_SETUP.md.
@@ -117,6 +149,12 @@ come from the broker's TMS through the same API (see the README's route table).
 | --- | --- |
 | Deploy fails at start with `RESEND_WEBHOOK_SECRET must be the webhook's signing secret` | The value is empty or not a `whsec_` secret; generate a temporary one or use Resend's. |
 | Deploy fails with `set RESEND_VERIFIED_DOMAINS ...` or `RESEND_SHARED_FROM needs RESEND_INBOUND_DOMAIN` | One of the Resend settings in step 1 is missing. |
+| `password authentication failed` | The password in `DATABASE_URL` is wrong, or still reads `[YOUR-PASSWORD]`. |
+| `Tenant or user not found` | The user in the pooler address must be `postgres.<project ref>`, as Supabase shows it, not plain `postgres`. |
+| `Network is unreachable` or a timeout on `db.<ref>.supabase.co` | That is the direct address; use the Session pooler URI. |
+| `invalid ... in connection string` or a wrong host | A `@`, `:`, `/`, `?` or `#` in the password is not percent-encoded. |
+| `prepared statement ... does not exist` | You are on a pooler port the service does not recognise; use the Session pooler (port 5432). |
+| Writes fail with `read-only` | The free project passed 500 MB; free up space or upgrade. |
 | `CHASE_TICK_SECONDS must be ...` | It must be `0`, or between `5` and `3600`. |
 | `401` on `/webhooks/resend` | The webhook secret in Render is still the temporary one, or differs from Resend's. |
 | No `POST /webhooks/resend` at all | The webhook still points at the tunnel, or the events are not ticked. |

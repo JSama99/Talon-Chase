@@ -155,14 +155,36 @@ def normalize_database_url(url: str) -> str:
     return url
 
 
+def engine_options(url: str) -> dict[str, Any]:
+    """Keyword arguments for ``create_engine`` that a given database needs.
+
+    - In-memory SQLite: one shared connection, usable from any thread.
+    - Supabase (any ``*.supabase.co`` or ``*.supabase.com`` host): TLS is required,
+      unless the address already sets ``sslmode``.
+    - Supabase's transaction pooler (port 6543): psycopg's prepared statements are
+      turned off, because a transaction pooler hands each transaction to a different
+      server connection and the prepared statement would not be there.
+    """
+    if url.startswith("sqlite") and ":memory:" in url:
+        from sqlalchemy.pool import StaticPool
+
+        return {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
+    parsed = sa.engine.make_url(url)
+    if parsed.get_backend_name() != "postgresql":
+        return {}
+    host = (parsed.host or "").lower()
+    connect_args: dict[str, Any] = {}
+    if host.endswith((".supabase.co", ".supabase.com")):
+        if "sslmode" not in parsed.query:
+            connect_args["sslmode"] = "require"
+        if host.endswith(".pooler.supabase.com") and parsed.port == 6543:
+            connect_args["prepare_threshold"] = None
+    return {"connect_args": connect_args} if connect_args else {}
+
+
 class SqlStore:
     def __init__(self, url: str) -> None:
-        kwargs: dict[str, Any] = {}
-        if url.startswith("sqlite") and ":memory:" in url:
-            from sqlalchemy.pool import StaticPool
-
-            kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
-        self.engine = sa.create_engine(url, **kwargs)
+        self.engine = sa.create_engine(url, **engine_options(url))
         self._local = threading.local()
         self._hints = {cls: get_type_hints(cls) for cls in ENTITY_TYPES}
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import pathlib
 import re
 import time
@@ -17,7 +18,7 @@ from chase.api.app import create_app
 from chase.api.main import base_url, tick_seconds
 from chase.channels.resend import secret_key
 from chase.domain.models import HOUR_MS
-from chase.store.sql import normalize_database_url
+from chase.store.sql import engine_options, normalize_database_url
 from tests.conftest import World
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -180,18 +181,13 @@ def test_the_service_is_built_from_the_dockerfile_and_checked_on_a_real_route(we
     assert TestClient(create_app(world.engine, KEY)).get("/healthz").status_code == 200
 
 
-def test_the_service_and_its_database_share_a_region_and_neither_sleeps(blueprint, web):
-    (db,) = blueprint["databases"]
-    assert web["region"] == db["region"]
+def test_the_service_never_sleeps(web):
     assert web["plan"] != "free"  # a sleeping instance would stop the tick
-    assert db["plan"] != "free"  # a free database is deleted after a trial period
-    assert db["ipAllowList"] == []
 
 
-def test_the_database_address_comes_from_the_blueprints_own_database(blueprint, web):
-    (db,) = blueprint["databases"]
-    ref = _env(web)["DATABASE_URL"]["fromDatabase"]
-    assert ref == {"name": db["name"], "property": "connectionString"}
+def test_the_database_is_supabase_and_its_address_is_never_committed(blueprint, web):
+    assert "databases" not in blueprint  # no Render Postgres; Supabase holds the data
+    assert _env(web)["DATABASE_URL"] == {"key": "DATABASE_URL", "sync": False}
 
 
 def test_every_setting_the_service_reads_is_provided_and_no_secret_is_committed(web):
@@ -237,3 +233,57 @@ def _run_print(code: str) -> str:
     with contextlib.redirect_stdout(out):
         exec(code, {})  # the guide's own one-liner, read from the repo
     return out.getvalue().strip()
+
+
+# ------------------------------------------------------------------ Supabase
+
+SESSION = "postgresql://postgres.abcd:pw@aws-0-us-east-1.pooler.supabase.com:5432/postgres"
+TRANSACTION = "postgresql://postgres.abcd:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+DIRECT = "postgresql://postgres:pw@db.abcd.supabase.co:5432/postgres"
+
+
+@pytest.mark.parametrize("address", [SESSION, DIRECT])
+def test_supabase_connections_require_tls(address):
+    options = engine_options(normalize_database_url(address))
+    assert options == {"connect_args": {"sslmode": "require"}}
+
+
+def test_supabases_transaction_pooler_gets_no_prepared_statements():
+    options = engine_options(normalize_database_url(TRANSACTION))
+    assert options == {"connect_args": {"sslmode": "require", "prepare_threshold": None}}
+
+
+def test_an_address_that_sets_sslmode_itself_is_left_alone():
+    options = engine_options(normalize_database_url(SESSION + "?sslmode=verify-full"))
+    assert options == {}
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "postgresql+psycopg://chase:chase@127.0.0.1:54329/chase",
+        "postgresql://u:p@dpg-abc-a.virginia-postgres.render.com/db",
+        "postgresql://u:p@evil-supabase.com.example.net:6543/db",
+        "sqlite+pysqlite:///chase.db",
+    ],
+)
+def test_other_databases_get_no_extra_options(address):
+    assert engine_options(normalize_database_url(address)) == {}
+
+
+def test_in_memory_sqlite_still_shares_one_connection():
+    assert engine_options("sqlite:///:memory:")["connect_args"] == {"check_same_thread": False}
+
+
+@pytest.mark.skipif(
+    not os.environ.get("CHASE_TEST_POSTGRES_URL"), reason="CHASE_TEST_POSTGRES_URL is not set"
+)
+def test_the_options_are_ones_psycopg_accepts():
+    """Connect for real with both Supabase options, against the test database."""
+    import sqlalchemy as sa
+
+    options = {"sslmode": "prefer", "prepare_threshold": None}
+    engine = sa.create_engine(os.environ["CHASE_TEST_POSTGRES_URL"], connect_args=options)
+    with engine.connect() as conn:
+        for _ in range(8):  # past psycopg's default prepare threshold of 5
+            assert conn.execute(sa.text("select 1")).scalar() == 1

@@ -6,7 +6,8 @@ stand-in that records what it would send and contacts no one.
 
 Environment:
   DATABASE_URL    database address; a plain postgres:// or postgresql:// address is
-                  opened with psycopg 3. Default: sqlite+pysqlite:///chase.db
+                  opened with psycopg 3, and a Supabase one with TLS (see
+                  docs/DEPLOY.md). Default: sqlite+pysqlite:///chase.db
   CHASE_API_KEY   admin key, at least 16 characters
   CHASE_SECRET    signs upload links, at least 32 characters
   CHASE_BASE_URL  public address used in upload and sign-in links; on Render it

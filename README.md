@@ -122,9 +122,9 @@ The Docker files were written but **not run**: the build environment had no Dock
 daemon. The same service was exercised through its routes in `tests/test_api.py`, and
 the migration was run against Postgres 16 in `tests/test_migrations.py`.
 
-Hosted: `render.yaml` deploys the service and Postgres on Render, with the tick run
-inside the service; see [docs/DEPLOY.md](docs/DEPLOY.md). Locally with Resend and a
-tunnel: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+Hosted: `render.yaml` deploys the service on Render, with the tick run inside the
+service, against a Supabase Postgres database; see [docs/DEPLOY.md](docs/DEPLOY.md).
+Locally with Resend and a tunnel: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
 Without Docker:
 

@@ -44,3 +44,9 @@ services:
         sync: false
       - key: CHASE_LOGIN_FROM
         sync: false
+      # Reading documents with Claude (docs/READER.md). Leave both empty to keep the
+      # stand-in, which hands every real file to a person.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CHASE_READER_MODEL
+        sync: false

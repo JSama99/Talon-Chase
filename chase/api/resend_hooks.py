@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from chase.channels.resend import ResendError, ResendInbox, mailbox_hashes, verify_signature
@@ -43,6 +44,7 @@ def mount_resend(
     secret: str,
     inbox: ResendInbox | None,
     inbound_domain: str = "",
+    after_inbound: Callable[[], None] | None = None,
 ) -> None:
     store = engine.store
 
@@ -120,7 +122,11 @@ def mount_resend(
             attachments=mail.attachments,
             external_id=external_id,
         )
-        return JSONResponse({"routed": True, "inbound_id": inbound.id, "status": inbound.status})
+        return JSONResponse(
+            {"routed": True, "inbound_id": inbound.id, "status": inbound.status},
+            # Files are read after Resend has its answer: a webhook must return quickly.
+            background=BackgroundTask(after_inbound) if after_inbound else None,
+        )
 
     def bounced(kind: str, data: dict[str, Any], message_id: str) -> JSONResponse:
         recipients = [str(a).strip().lower() for a in data.get("to") or [] if "@" in str(a)]

@@ -78,12 +78,33 @@ EVENT_PAYLOADS: dict[str, dict[str, str]] = {
     "inbound.held": {"inbound_id": "str", "reason": "EscalationReason", "detail": "str"},
     "inbound.late": {"inbound_id": "str", "chase_state": "str"},
     # Proof
-    "document.received": {
+    "document.arrived": {
         "document_id": "str",
         "sha256": "str",
         "filename": "str",
-        "doc_type": "DocType",
         "rerouted_from_load": "str",
+    },
+    "document.read": {
+        "document_id": "str",
+        "sha256": "str",
+        "reader": "str",
+        "doc_type": "DocType",
+        "readable": "bool",
+        "confidence": "int",
+    },
+    "reading.retry": {
+        "reading_id": "str",
+        "document_id": "str",
+        "try": "int",
+        "error": "str",
+        "next_attempt_at_ms": "int",
+    },
+    "reading.failed": {
+        "reading_id": "str",
+        "document_id": "str",
+        "tries": "int",
+        "permanent": "bool",
+        "error": "str",
     },
     "document.rerouted": {"document_id": "str", "sha256": "str", "to_load": "str"},
     "check.completed": {
@@ -151,4 +172,13 @@ EVENT_PAYLOADS: dict[str, dict[str, str]] = {
 RETIRED_PAYLOADS: dict[str, dict[str, str]] = {
     # Replaced in 1.0.0 by consent.recorded with source STOP_REPLY (migration 0003).
     "sms.stopped": {"contact_id": "str", "inbound_id": "str"},
+    # Replaced in 2.0.0 by document.arrived (the file is kept) and document.read (what
+    # the reader made of it), because reading now happens after the file is kept.
+    "document.received": {
+        "document_id": "str",
+        "sha256": "str",
+        "filename": "str",
+        "doc_type": "DocType",
+        "rerouted_from_load": "str",
+    },
 }

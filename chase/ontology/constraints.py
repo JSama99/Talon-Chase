@@ -27,6 +27,7 @@ from chase.domain.models import (
     OutboxPurpose,
     OutboxStatus,
     PartyRole,
+    ReadingStatus,
     RequirementStatus,
     Step,
     WriteBackStatus,
@@ -134,7 +135,7 @@ def _tenancy(s: Snapshot) -> Iterator[Violation]:
             contact = s.get(m.Contact, contact_id)
             if contact and contact.carrier_id != load.carrier_id:
                 yield _v("TC-02", load, f"contact {contact_id} works for another carrier")
-    for cls in (m.Chase, m.Escalation, m.OutboxMessage):
+    for cls in (m.Chase, m.Escalation, m.OutboxMessage, m.Reading):
         for obj in s.all(cls):
             load = s.get(m.Load, obj.load_id)
             if load and load.broker_id != obj.broker_id:
@@ -185,6 +186,7 @@ def _one_chase(s: Snapshot) -> Iterator[Violation]:
 _STEPS_FOR = {
     ChaseState.OPEN: {Step.FIRST_EMAIL},
     ChaseState.ASKED: {Step.DRIVER_SMS, Step.SECOND, Step.THIRD, Step.ESCALATE},
+    ChaseState.RECEIVED: {Step.READ},  # rests here while the reading desk reads the files
     ChaseState.FAILED_CHECK: {Step.REASK},
     ChaseState.PASSED: {Step.WRITEBACK},
     ChaseState.ESCALATED: {Step.NONE},
@@ -596,6 +598,46 @@ def _operator_emails(s: Snapshot) -> Iterator[Violation]:
             yield _v("TC-21", operator, f"shares {email} with operator {seen[email]}")
         else:
             seen[email] = operator.id
+
+
+@rule(
+    "TC-22",
+    "A document is read once: an unread document has exactly one reading in hand, a "
+    "settled one has none, and a chase waits in RECEIVED only for a file still unread.",
+)
+def _readings(s: Snapshot) -> Iterator[Violation]:
+    in_hand = (ReadingStatus.PENDING, ReadingStatus.READING)
+    for document in s.all(m.Document):
+        mine = s.where(m.Reading, "document_id", document.id)
+        waiting = [r for r in mine if r.status in in_hand]
+        if len(mine) > 1:
+            yield _v("TC-22", document, f"has {len(mine)} readings")
+        if document.read_at_ms is None:
+            if len(waiting) != 1:
+                yield _v("TC-22", document, "unread, with no reading in hand")
+            if document.reader:
+                yield _v("TC-22", document, "names a reader though it is unread")
+        elif waiting:
+            yield _v("TC-22", document, "settled, yet a reading is still in hand")
+    for reading in s.all(m.Reading):
+        document = s.get(m.Document, reading.document_id)
+        if document and document.load_id != reading.load_id:
+            yield _v("TC-22", reading, "load differs from its document's load")
+        if (reading.status in in_hand) == (reading.finished_at_ms is not None):
+            yield _v("TC-22", reading, "finished_at_ms is set if and only if DONE or FAILED")
+        if (reading.status is ReadingStatus.READING) != bool(reading.claim_token):
+            yield _v("TC-22", reading, "a claim token is held if and only if READING")
+        if reading.status is ReadingStatus.DONE and document and not document.reader:
+            yield _v("TC-22", reading, "DONE, but its document names no reader")
+    for chase in s.all(m.Chase):
+        resting = chase.state is ChaseState.RECEIVED
+        if resting != bool(chase.reading_inbound_id):
+            yield _v("TC-22", chase, "names a message being read if and only if RECEIVED")
+        elif resting and not any(
+            d.read_at_ms is None and d.load_id == chase.load_id
+            for d in s.where(m.Document, "inbound_id", chase.reading_inbound_id)
+        ):
+            yield _v("TC-22", chase, "waits in RECEIVED though every file has been read")
 
 
 def check_store(store: Any) -> list[Violation]:

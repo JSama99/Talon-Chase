@@ -31,6 +31,7 @@ from chase.engine import ChaseEngine
 from chase.ontology.constraints import check_store
 from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
+from chase.reading import ReadingDesk
 from chase.store.memory import MemoryStore
 from chase.writeback.adapters import FakeApiAdapter
 
@@ -73,6 +74,7 @@ class World:
         start: int = START,
         carrier_tz: str = TZ,
         honors_idempotency: bool = True,
+        reader=None,
     ) -> None:
         World.created.append(self)
         self.check_rules = True
@@ -82,6 +84,8 @@ class World:
         self.email = FakeEmail(honors_idempotency)
         self.sms = FakeSms(honors_idempotency)
         self.tms = FakeApiAdapter()
+        if reader is not None and not hasattr(reader, "read"):
+            reader = reader(self.clock)  # a factory, for a reader that needs this world's clock
         self.engine = ChaseEngine(
             store=self.store,
             clock=self.clock,
@@ -89,11 +93,14 @@ class World:
             email=self.email,
             sms=self.sms,
             classifier=RuleBasedClassifier(),
-            reader=StandInReader(),
+            reader=reader or StandInReader(),
             adapters=[self.tms],
             secret=b"test-secret",
         )
         self.outbox = OutboxDispatcher(self.engine)
+        # Idle with the stand-in, which the engine calls itself. A world built with a
+        # reader that is not inline is read here, as the service's tick does.
+        self.desk = ReadingDesk(self.engine)
         self.broker = Broker(
             id="brk-1",
             name="Peachtree Logistics",
@@ -156,11 +163,13 @@ class World:
         return steps
 
     def settle(self) -> None:
-        """Deliver what is queued and let the engine react, at the current time."""
+        """Deliver what is queued, read what arrived and let the engine react, at the
+        current time."""
         for _ in range(10):
             report = self.outbox.dispatch()
+            read = self.desk.work()
             steps = self.engine.tick()
-            if not report.changed and not steps:
+            if not report.changed and not read.changed and not steps:
                 return
 
     def chase(self, load: Load) -> Chase:
@@ -177,10 +186,12 @@ class World:
         )
         return inbound
 
-    def inbound(self, **kwargs):
-        """A carrier message arrives, then whatever it triggers is delivered."""
+    def inbound(self, settle: bool = True, **kwargs):
+        """A carrier message arrives, then whatever it triggers is delivered.
+        ``settle=False`` stops right after the engine took it in, before any reading."""
         inbound = self.engine.handle_inbound(**kwargs)
-        self.settle()
+        if settle:
+            self.settle()
         return self.store.get(type(inbound), inbound.id)
 
     def send_pod(self, load: Load, **overrides):

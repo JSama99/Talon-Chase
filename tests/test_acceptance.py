@@ -1,4 +1,5 @@
-"""The sixteen acceptance tests named in the build prompt. Each one is a rule."""
+"""The acceptance tests: the sixteen named in the build prompt, and one for each rule
+added since (the reading desk and the reader). Each one is a rule."""
 
 from __future__ import annotations
 
@@ -403,3 +404,102 @@ def test_illegal_state_transition_raises(world: World):
     assert len(world.tms.filed) == 1
     assert Step.NONE is world.chase(load).next_step
     assert TZ  # carrier-local time zone used throughout
+
+
+# ------------------------------------------------- rules 10 and 13: reading
+
+
+def test_a_file_is_read_outside_the_engine_and_never_sent_back_unread():
+    """Rule 10: the engine keeps and queues a file; it never calls a reader that talks
+    to a service. Rule 13: when the reader never answers, a person gets the document
+    and the carrier hears nothing."""
+    from chase.domain.models import Document, Reading, ReadingStatus
+    from chase.ports import ReaderError
+    from chase.reading import DEFAULT_BACKOFF_MS
+
+    class Down:
+        name, inline, calls = "down/v1", False, 0
+
+        def read(self, filename, content):
+            Down.calls += 1
+            raise ReaderError("Anthropic 529/overloaded_error")
+
+    world = World(reader=Down())
+    load = world.make_load()
+    world.tick()
+    world.engine.handle_inbound(
+        broker_id="brk-1",
+        channel=Channel.EMAIL,
+        from_addr=world.dispatcher.email,
+        subject=f"POD {load.load_number}",
+        body="attached",
+        attachments=[("pod.jpg", pod(load))],
+    )
+    assert Down.calls == 0 and world.chase(load).state is ChaseState.RECEIVED
+    asked = len(world.email.sent)
+    for wait in (0, *DEFAULT_BACKOFF_MS):
+        world.clock.advance(wait)
+        world.settle()
+    (reading,) = world.store.find(Reading)
+    assert reading.status is ReadingStatus.FAILED and Down.calls == 1 + len(DEFAULT_BACKOFF_MS)
+    assert [e.reason for e in world.escalations(load)] == [EscalationReason.LOW_CONFIDENCE]
+    assert len(world.email.sent) == asked and world.tms.filed == {}
+    (document,) = world.store.find(Document, load_id=load.id)
+    assert document.extraction["confidence"] == 0 and document.reader == ""
+
+
+def test_the_model_describes_and_code_decides():
+    """Rule 13: the model is told nothing about the load, is not shown the file name,
+    is asked for no verdict and no confidence; a doubt it reports sends the document
+    to a person even when everything else on it would pass."""
+    import json
+
+    import httpx
+
+    from chase.reader import claude
+
+    sent = []
+
+    def api(request: httpx.Request) -> httpx.Response:
+        sent.append(request.content.decode())
+        answer = {
+            "document_type": "POD",
+            "legibility": "clear",
+            "reference_numbers": [{"label": "Load", "value": load.load_number, "certain": True}],
+            "receiver_signature": "unsure",
+            "delivery_date": {"as_written": "", "month": 0, "day": 0, "year": 0, "certain": True},
+            "handwritten_notes": [],
+            "problems": [],
+            "addressed_to_reader": False,
+        }
+        return httpx.Response(200, json={
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": json.dumps(answer)}],
+            "usage": {},
+        })  # fmt: skip
+
+    world = World(reader=lambda clock: claude.ClaudeReader(
+        "sk-ant-test-" + "k" * 40, clock, transport=httpx.MockTransport(api)
+    ))  # fmt: skip
+    load = world.make_load()
+    world.tick()
+    world.reply(load, "POD", [(f"{load.load_number} signed clean.jpg", _photo())])
+    (request,) = sent
+    for secret in (load.load_number, load.id, "signed clean", world.dispatcher.email,
+                   str(load.rate_cents)):  # fmt: skip
+        assert secret not in request, secret
+    words = json.loads(request)
+    assert "confidence" not in json.dumps(words["output_config"])
+    assert set(claude.SCHEMA["properties"]) & {"verdict", "acceptable", "valid", "ok"} == set()
+    assert [e.reason for e in world.escalations(load)] == [EscalationReason.LOW_CONFIDENCE]
+    assert world.tms.filed == {}
+
+
+def _photo() -> bytes:
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (320, 240), "white").save(out, "JPEG")
+    return out.getvalue()

@@ -6,8 +6,9 @@ the document, files it to the broker's system, and hands the load to a person wh
 it is stuck or anything looks risky.
 
 **Status: version 1, not yet used by a broker.** Email is real through Resend once
-an API key is set ([docs/EMAIL.md](docs/EMAIL.md)); without one, and for texts,
-the language model and the TMS, everything sits behind interfaces with in-memory
+an API key is set ([docs/EMAIL.md](docs/EMAIL.md)). Documents are read by a Claude
+model once an Anthropic key is set ([docs/READER.md](docs/READER.md)); that reader
+has not read a real POD yet. Texts and the TMS sit behind interfaces with in-memory
 stand-ins. See [What is not built](#what-is-not-built).
 
 Changing the code, as a person or a coding agent: read [AGENTS.md](AGENTS.md) first.
@@ -34,9 +35,9 @@ CHASE_TEST_POSTGRES_URL=postgresql+psycopg://user:pass@localhost:5432/chase_test
 ## How a chase runs
 
 ```
-load delivered ──> ask carrier ──> file arrives? ──yes──> check document ──pass──> file to TMS ──> closed
-                       ^                │ no                    │ fail (say why)
-                       └── wait, retry ─┘<──────────────────────┘
+load delivered ──> ask carrier ──> file arrives? ──yes──> read ──> check document ──pass──> file to TMS ──> closed
+                       ^                │ no                            │ fail (say why)
+                       └── wait, retry ─┘<──────────────────────────────┘
                                 │ 3 tries, no file            any risk flag, any step
                                 └──────────────> hand to a person <────────────┘
 ```
@@ -50,6 +51,12 @@ Default schedule, in the carrier's local time (every interval is per-broker conf
 | 08:00 next business day | Second email, and a text to the dispatcher with consent |
 | 48 hours after the first ask | Third email, copying the broker's rep |
 | 24 hours after that | Stop. The load goes to a person with the carrier's phone numbers and full history |
+
+A file is kept and queued in one step, then read outside the engine by the reading
+desk (`chase/reading.py`), and checked once every file of that message has been read.
+Nothing is sent to the carrier while a file waits to be read. If the reader does not
+answer, it is tried again for about 80 minutes, then the document goes to a person;
+the carrier is never told a file nobody read is bad. See [docs/READER.md](docs/READER.md).
 
 Nothing is sent between 20:00 and 07:00 carrier-local. A promise ("will send
 tomorrow") pushes the next ask back a day. An out-of-office reply changes nothing.
@@ -78,14 +85,22 @@ Each has a test in `tests/test_acceptance.py`.
    on; a contact re-sync cannot.
 9. **Kill switches**, global and per broker, stop every outbound message and write-back.
    Messages already queued are held, not dropped.
-10. **Sending is separate from deciding.** The engine writes each message to an outbox
-    in the same transaction as its decision; a dispatcher delivers it afterwards, at
-    least once, with a stable idempotency key. See [docs/OUTBOX.md](docs/OUTBOX.md).
+10. **Sending is separate from deciding, and reading from keeping.** The engine writes
+    each message to an outbox in the same transaction as its decision; a dispatcher
+    delivers it afterwards, at least once, with a stable idempotency key. Each file is
+    kept and queued the same way and read afterwards by the reading desk. See
+    [docs/OUTBOX.md](docs/OUTBOX.md) and [docs/READER.md](docs/READER.md).
 11. **Every step is evidence.** Each send, reply, document, check, state change and
     write-back appends to a per-load hash chain. See [docs/EVIDENCE.md](docs/EVIDENCE.md).
 12. **Records obey the ontology.** Every record and evidence payload is checked against a
-    closed schema when it is saved, and 21 cross-record rules (TC-01 to TC-21) hold after
+    closed schema when it is saved, and 22 cross-record rules (TC-01 to TC-22) hold after
     every test and in the synthetic run. See [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+13. **The model describes; code decides.** The document reader is never told the load,
+    never shown the file name, never asked whether a document is good or how sure it
+    is. Confidence comes from what it could not make out, and any doubt about the
+    signature, the date, a reference number or handwriting sends the document to a
+    person, whatever the broker's confidence floor. A file nobody read is never sent
+    back to the carrier.
 
 ## Layout
 
@@ -97,22 +112,25 @@ chase/
   ontology/    schema, evidence payloads, cross-record rules, artifact builder
   engine.py    the orchestration: intake, tick, inbound, checks, write-back, escalation
   outbox.py    the outbox: enqueue, and the dispatcher that delivers, retries, gives up
+  reading.py   the reading desk: reads queued files outside the engine, retries, gives up
   ports.py     interfaces for email, text, classifier, reader, TMS adapter, store
   channels/    Resend email (send, inbound, bounces); in-memory email and text stand-ins
-  reader/      rule-based reply classifier; stand-in document reader
+  reader/      Claude document reader (claude.py), file preparation (files.py), reader
+               evaluation and drawn samples; rule-based reply classifier; stand-in reader
   writeback/   FakeApiAdapter (TMS API stand-in), PacketEmailAdapter (works with any TMS)
   store/       MemoryStore, SqlStore (SQLite and Postgres)
   api/         FastAPI service
   app/         broker screens: sign-in, templates, timeline wording, preview
   demo.py      five-load walkthrough
 synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
-migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
+migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology, 0004 undeliverable
+               contacts, 0005 reading desk
 ontology/      generated JSON Schema and JSON-LD context
 tools/         verify_evidence.py, a standalone verifier with no project imports;
                site.py, which records and builds the landing page
 site/          the landing page; see docs/SITE.md
 docs/          ONTOLOGY.md (generated), DEPLOY.md, EMAIL.md, EVIDENCE.md, LOCAL_SETUP.md,
-               OUTBOX.md, SITE.md, UI.md, VALIDATION.md
+               OUTBOX.md, READER.md, SITE.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -146,8 +164,9 @@ Admin routes need the `X-API-Key` header. Interactive reference at `/docs`.
 | `PATCH /v1/brokers/{id}/config` | Change schedule and policy settings |
 | `POST /v1/loads` | Add or update a load; opens a chase once it is delivered |
 | `POST /v1/inbound` | A carrier's email or text, attachments as base64; safe to repeat with the same `external_id` |
-| `POST /v1/tick` | Do what is due, deliver queued messages, finish what that unblocks; call it every minute or two |
+| `POST /v1/tick` | Do what is due, deliver queued messages, read queued files, finish what that unblocks; call it every minute or two |
 | `POST /v1/dispatch` | Deliver queued messages only |
+| `POST /v1/read` | Read queued files only; what a reading leads to happens on the next tick |
 | `GET /u/{token}`, `POST /u/{token}` | Carrier upload page and upload; no key, the token is the permission |
 | `GET /v1/brokers/{id}/queue` | What needs a person: open escalations and unmatched messages |
 | `GET /v1/brokers/{id}/summary`, `/chases` | Counts and the list of chases |
@@ -215,19 +234,25 @@ messages held.
 **What this does and does not show.** The fixtures are structured stand-ins that state
 what a reader would extract from an image. The evaluation proves the routing rules
 are right given a correct reading. It says nothing about how well a real model reads
-real PODs. That needs labelled documents from a pilot broker.
+real PODs. That needs labelled documents from a pilot broker, run through
+`python -m chase.reader.evaluate` ([docs/READER.md](docs/READER.md#measuring-it)).
+
+The same run with every file read through the reading desk instead of on the spot
+comes out identical (`tests/test_synthetic.py`).
 
 ## What is not built
 
 - **Real channels, except email.** Email goes through Resend (see
-  [docs/EMAIL.md](docs/EMAIL.md)). There is still no text line, language model or TMS
-  integration; each needs its own adapter behind the existing interface.
+  [docs/EMAIL.md](docs/EMAIL.md)). There is still no text line or TMS integration;
+  each needs its own adapter behind the existing interface.
 - **Document storage.** Files are stored in the database by content hash. Move them to
   object storage before real volume.
 - **Public holidays.** The schedule knows weekends and quiet hours, not holidays.
-- **A real document reader.** The stand-in reads only the synthetic fixtures. A real
-  photo or PDF gets zero confidence and goes to a person; the carrier is not asked
-  for a better copy by something that never looked at it.
+- **A document reader measured on real PODs.** A reader that uses a language model
+  (Claude) is built and tested against a fake of the API ([docs/READER.md](docs/READER.md)).
+  It has not been called live and has not read a real POD, so nobody knows yet how
+  often it misreads one. Without `ANTHROPIC_API_KEY` the stand-in reads only the
+  synthetic fixtures, and a real photo or PDF goes to a person.
 - **A real reply classifier.** The stand-in is keyword rules. Anything it does not
   recognise goes to a person, which is safe but will over-escalate on real mail.
 - **External anchoring of evidence.** See the limits section of docs/EVIDENCE.md.
@@ -238,5 +263,7 @@ real PODs. That needs labelled documents from a pilot broker.
    that asks for pilots is in `site/`: [docs/SITE.md](docs/SITE.md).
 2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md), then deploy:
    [docs/DEPLOY.md](docs/DEPLOY.md).
-3. One at a time: text messages (Twilio), document reader with labelled PODs, first
-   TMS adapter.
+3. Turn the reader on and measure it: set `ANTHROPIC_API_KEY`, run the drawn samples,
+   then label the pilot broker's PODs and run the evaluation
+   ([docs/READER.md](docs/READER.md#turning-it-on)).
+4. One at a time: text messages (Twilio), first TMS adapter.

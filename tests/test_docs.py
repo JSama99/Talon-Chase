@@ -44,7 +44,7 @@ def test_every_escalation_reason_has_screen_wording():
 def test_agents_md_lists_every_setting_the_service_reads():
     """AGENTS.md is how coding agents learn the app; its settings table must not drift."""
     code = "".join(path.read_text() for path in (ROOT / "chase").rglob("*.py"))
-    read = set(re.findall(r'"((?:CHASE|RESEND|RENDER)_[A-Z_]+|DATABASE_URL)"', code))
+    read = set(re.findall(r'"((?:CHASE|RESEND|RENDER|ANTHROPIC)_[A-Z_]+|DATABASE_URL)"', code))
     assert len(read) >= 10, sorted(read)  # the pattern still finds them
     agents = (ROOT / "AGENTS.md").read_text()
     missing = sorted(key for key in read if f"| `{key}` |" not in agents)

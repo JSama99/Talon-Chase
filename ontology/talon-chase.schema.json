@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:talonsight:talon-chase:ontology:1.0.0",
+  "$id": "urn:talonsight:talon-chase:ontology:2.0.0",
   "title": "Talon Chase ontology",
   "description": "Entities, value types, enumerations and evidence payloads of Talon Chase. Every object is closed. x-ref names the entity an id points at; x-sensitive marks values that must never be sent to a carrier.",
-  "x-version": "1.0.0",
+  "x-version": "2.0.0",
   "x-groups": {
     "Who": [
       "Broker",
@@ -26,6 +26,7 @@
     ],
     "Proof": [
       "Document",
+      "Reading",
       "Check",
       "EvidenceEvent"
     ],
@@ -39,6 +40,7 @@
     ]
   },
   "x-retired-kinds": [
+    "document.received",
     "sms.stopped"
   ],
   "$defs": {
@@ -363,6 +365,7 @@
         "reply_to_contact_id",
         "passed_document_id",
         "writeback_id",
+        "reading_inbound_id",
         "closed_at_ms",
         "closed_reason",
         "kill_noted"
@@ -442,6 +445,12 @@
           "description": "The current filing.",
           "type": "string",
           "x-ref": "WriteBack",
+          "x-ref-optional": true
+        },
+        "reading_inbound_id": {
+          "description": "The carrier message whose files are being read; set while RECEIVED.",
+          "type": "string",
+          "x-ref": "Inbound",
           "x-ref-optional": true
         },
         "closed_at_ms": {
@@ -722,7 +731,9 @@
         "content_sha256",
         "received_at_ms",
         "doc_type",
-        "extraction"
+        "extraction",
+        "read_at_ms",
+        "reader"
       ],
       "properties": {
         "id": {
@@ -759,6 +770,22 @@
         "extraction": {
           "description": "What the reader read from it.",
           "$ref": "#/$defs/Extraction"
+        },
+        "read_at_ms": {
+          "description": "When the reading was settled: the reader answered, or gave up. Null while unread.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reader": {
+          "description": "Which reader read it; empty while unread or when none could.",
+          "type": "string"
         }
       },
       "description": "A file received for a load.",
@@ -914,7 +941,8 @@
             "config.changed",
             "consent.recorded",
             "contact.approved",
-            "document.received",
+            "document.arrived",
+            "document.read",
             "document.rerouted",
             "escalation.acknowledged",
             "escalation.opened",
@@ -940,6 +968,8 @@
             "outbound.blocked",
             "outbound.refused",
             "outbound.switch",
+            "reading.failed",
+            "reading.retry",
             "requirement.closed",
             "sms.skipped",
             "writeback.failed",
@@ -1124,14 +1154,30 @@
           "if": {
             "properties": {
               "kind": {
-                "const": "document.received"
+                "const": "document.arrived"
               }
             }
           },
           "then": {
             "properties": {
               "payload": {
-                "$ref": "#/$defs/payload.document.received"
+                "$ref": "#/$defs/payload.document.arrived"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "document.read"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.document.read"
               }
             }
           }
@@ -1540,6 +1586,38 @@
           "if": {
             "properties": {
               "kind": {
+                "const": "reading.failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.reading.failed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "reading.retry"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/payload.reading.retry"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
                 "const": "requirement.closed"
               }
             }
@@ -1646,7 +1724,8 @@
         "delivery_date_ms",
         "page_count",
         "exception_notes",
-        "confidence"
+        "confidence",
+        "doubts"
       ],
       "properties": {
         "doc_type": {
@@ -1696,6 +1775,13 @@
           "description": "How sure the reader is, 0 to 100.",
           "type": "integer",
           "minimum": 0
+        },
+        "doubts": {
+          "description": "What the reader could not make out, in short phrases for a person.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "description": "What the reader saw on a document."
@@ -2239,6 +2325,101 @@
       },
       "description": "When each request in a chase is due, fixed when the chase opens."
     },
+    "Reading": {
+      "type": "object",
+      "title": "Reading",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "broker_id",
+        "load_id",
+        "document_id",
+        "created_at_ms",
+        "next_attempt_at_ms",
+        "status",
+        "tries",
+        "claim_token",
+        "lease_until_ms",
+        "last_error",
+        "finished_at_ms"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier.",
+          "type": "string"
+        },
+        "broker_id": {
+          "description": "The broker the file was sent to.",
+          "type": "string",
+          "x-ref": "Broker"
+        },
+        "load_id": {
+          "description": "The load the document is filed under.",
+          "type": "string",
+          "x-ref": "Load"
+        },
+        "document_id": {
+          "description": "The document to read.",
+          "type": "string",
+          "x-ref": "Document"
+        },
+        "created_at_ms": {
+          "description": "When it was queued.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_attempt_at_ms": {
+          "description": "When it may next be tried.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "description": "Where the reading stands.",
+          "$ref": "#/$defs/ReadingStatus"
+        },
+        "tries": {
+          "description": "Reader calls started.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "claim_token": {
+          "description": "Which desk holds it while READING.",
+          "type": "string"
+        },
+        "lease_until_ms": {
+          "description": "When that hold expires.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_error": {
+          "description": "The last reader error.",
+          "type": "string"
+        },
+        "finished_at_ms": {
+          "description": "When it reached DONE or FAILED.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "One file to be read. Written in the same transaction as its document; read afterwards by the reading desk, outside the engine, with retries.",
+      "x-group": "Proof"
+    },
+    "ReadingStatus": {
+      "title": "ReadingStatus",
+      "enum": [
+        "PENDING",
+        "READING",
+        "DONE",
+        "FAILED"
+      ]
+    },
     "Requirement": {
       "type": "object",
       "title": "Requirement",
@@ -2317,6 +2498,7 @@
         "THIRD",
         "ESCALATE",
         "REASK",
+        "READ",
         "WRITEBACK",
         "NONE"
       ],
@@ -2641,6 +2823,65 @@
         }
       }
     },
+    "payload.document.arrived": {
+      "type": "object",
+      "title": "document.arrived payload",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "sha256",
+        "filename",
+        "rerouted_from_load"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "rerouted_from_load": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.document.read": {
+      "type": "object",
+      "title": "document.read payload",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "sha256",
+        "reader",
+        "doc_type",
+        "readable",
+        "confidence"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "reader": {
+          "type": "string"
+        },
+        "doc_type": {
+          "$ref": "#/$defs/DocType"
+        },
+        "readable": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "payload.document.received": {
       "type": "object",
       "title": "document.received payload",
@@ -2668,7 +2909,8 @@
         "rerouted_from_load": {
           "type": "string"
         }
-      }
+      },
+      "deprecated": true
     },
     "payload.document.rerouted": {
       "type": "object",
@@ -3207,6 +3449,67 @@
         },
         "by": {
           "type": "string"
+        }
+      }
+    },
+    "payload.reading.failed": {
+      "type": "object",
+      "title": "reading.failed payload",
+      "additionalProperties": false,
+      "required": [
+        "reading_id",
+        "document_id",
+        "tries",
+        "permanent",
+        "error"
+      ],
+      "properties": {
+        "reading_id": {
+          "type": "string"
+        },
+        "document_id": {
+          "type": "string"
+        },
+        "tries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "permanent": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "payload.reading.retry": {
+      "type": "object",
+      "title": "reading.retry payload",
+      "additionalProperties": false,
+      "required": [
+        "reading_id",
+        "document_id",
+        "try",
+        "error",
+        "next_attempt_at_ms"
+      ],
+      "properties": {
+        "reading_id": {
+          "type": "string"
+        },
+        "document_id": {
+          "type": "string"
+        },
+        "try": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string"
+        },
+        "next_attempt_at_ms": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

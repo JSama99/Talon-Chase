@@ -1,8 +1,9 @@
 """Service entry point: uvicorn chase.api.main:app
 
-Version 1 runs with the in-memory text-message stand-in and the rule-based reader.
-Email is real once RESEND_API_KEY is set; without it, email goes to an in-memory
-stand-in that records what it would send and contacts no one.
+Version 1 runs with the in-memory text-message stand-in. Email is real once
+RESEND_API_KEY is set; without it, email goes to an in-memory stand-in that records
+what it would send and contacts no one. Documents are read by a Claude model once
+ANTHROPIC_API_KEY is set; without it, a stand-in hands every real file to a person.
 
 Environment:
   DATABASE_URL    database address; a plain postgres:// or postgresql:// address is
@@ -24,11 +25,16 @@ Email through Resend (see docs/EMAIL.md):
   RESEND_SHARED_FROM        address on a verified domain that brokers without their own
                             verified domain send through, e.g. chase@mail.example.com
   RESEND_INBOUND_DOMAIN     where Resend receives mail (required with RESEND_SHARED_FROM)
+
+Reading documents with Claude (see docs/READER.md):
+  ANTHROPIC_API_KEY         API key; turns the real reader on
+  CHASE_READER_MODEL        which model reads; default claude-opus-5-5
 """
 
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 
 from chase.api.app import create_app
@@ -41,10 +47,11 @@ from chase.channels.resend import (
     identity_from_env,
     secret_key,
 )
-from chase.domain.clock import SystemClock, UuidIds
+from chase.domain.clock import Clock, SystemClock, UuidIds
 from chase.domain.models import Broker
 from chase.engine import ChaseEngine
-from chase.ports import EmailPort
+from chase.ports import DocumentReader, EmailPort
+from chase.reader.claude import DEFAULT_MODEL, ClaudeReader
 from chase.reader.rules import RuleBasedClassifier, StandInReader
 from chase.store.sql import SqlStore, normalize_database_url
 from chase.writeback.adapters import FakeApiAdapter
@@ -110,6 +117,34 @@ def _resend(
     return email, ResendInbox(client), identity
 
 
+def document_reader(clock: Clock, env: Mapping[str, str] | None = None) -> DocumentReader:
+    """The document reader: Claude when ANTHROPIC_API_KEY is set, else the stand-in,
+    which reads nothing and hands every real file to a person. Raises RuntimeError
+    for a half-set-up reader, without repeating the key."""
+    env = os.environ if env is None else env
+    key = env.get("ANTHROPIC_API_KEY", "").strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'":
+        key = key[1:-1].strip()
+    model = env.get("CHASE_READER_MODEL", "").strip()
+    if not key:
+        if model:
+            raise RuntimeError(
+                "CHASE_READER_MODEL is set but ANTHROPIC_API_KEY is not: without the key "
+                "no model reads anything. Set the key, or remove CHASE_READER_MODEL."
+            )
+        return StandInReader()
+    prefix = "ANTHROPIC_API_KEY must be an Anthropic API key: "
+    if key.startswith(("re_", "whsec_")):
+        raise RuntimeError(prefix + "this looks like a Resend key or webhook secret")
+    if len(key) < 20 or any(c.isspace() for c in key):
+        raise RuntimeError(prefix + "it is too short or has a space or a line break in it")
+    if model and not re.fullmatch(r"claude-[a-z0-9][a-z0-9.-]*", model):
+        raise RuntimeError(
+            f"CHASE_READER_MODEL must be a Claude model id such as {DEFAULT_MODEL}, not {model!r}"
+        )
+    return ClaudeReader(key, clock, model=model or DEFAULT_MODEL)
+
+
 def base_url(env: Mapping[str, str] | None = None) -> str:
     """The public address used in links: CHASE_BASE_URL, else the address Render
     gives the service, else the local one."""
@@ -144,14 +179,15 @@ def build_app():
     if store.engine.dialect.name == "sqlite":
         store.create_schema()  # Postgres is set up by `alembic upgrade head`
     email, inbox, identity = _resend(store)
+    clock = SystemClock()
     engine = ChaseEngine(
         store=store,
-        clock=SystemClock(),
+        clock=clock,
         ids=UuidIds(),
         email=email,
         sms=FakeSms(),
         classifier=RuleBasedClassifier(),
-        reader=StandInReader(),
+        reader=document_reader(clock),
         adapters=[FakeApiAdapter()],
         secret=secret.encode(),
         base_url=base_url(),

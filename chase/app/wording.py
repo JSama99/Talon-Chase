@@ -92,7 +92,7 @@ CHECK_REASONS: dict[str, str] = {
 STATE_WORDS: dict[ChaseState, str] = {
     ChaseState.OPEN: "Starting",
     ChaseState.ASKED: "Asked",
-    ChaseState.RECEIVED: "Received",
+    ChaseState.RECEIVED: "Reading",
     ChaseState.CHECKING: "Checking",
     ChaseState.FAILED_CHECK: "Asked again",
     ChaseState.PASSED: "Filing",

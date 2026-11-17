@@ -29,6 +29,10 @@ class Extraction:
         "Shortage, damage or refusal noted by the receiver.", default_factory=list
     )
     confidence: int = f("How sure the reader is, 0 to 100.", default=0)
+    doubts: list[str] = f(
+        "What the reader could not make out, in short phrases for a person.",
+        default_factory=list,
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,6 +44,7 @@ class Extraction:
             "page_count": self.page_count,
             "exception_notes": list(self.exception_notes),
             "confidence": self.confidence,
+            "doubts": list(self.doubts),
         }
 
     @classmethod
@@ -56,7 +61,14 @@ class Extraction:
             page_count=int(data.get("page_count", 0)),
             exception_notes=[str(n) for n in data.get("exception_notes", [])],
             confidence=int(data.get("confidence", 0)),
+            doubts=[str(d) for d in data.get("doubts", [])],
         )
+
+
+def cannot_read(why: str = "") -> Extraction:
+    """Nothing looked at the file, or what looked could not answer. Zero confidence
+    sends the document to a person; "unreadable" would blame the carrier's copy."""
+    return Extraction(readable=False, confidence=0, doubts=[why] if why else [])
 
 
 @dataclass(frozen=True)

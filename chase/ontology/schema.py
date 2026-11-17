@@ -19,7 +19,7 @@ from chase.evidence.canonical import canonical_json, sha256_hex
 from chase.evidence.chain import EvidenceEvent
 from chase.ontology.events import EVENT_PAYLOADS, RETIRED_PAYLOADS
 
-ONTOLOGY_VERSION = "1.0.0"
+ONTOLOGY_VERSION = "2.0.0"
 ONTOLOGY_ID = f"urn:talonsight:talon-chase:ontology:{ONTOLOGY_VERSION}"
 VOCAB = "urn:talonsight:talon-chase:"
 
@@ -28,7 +28,7 @@ GROUPS: dict[str, tuple[type, ...]] = {
     "Freight": (m.Load, m.Party),
     "Need": (m.Requirement, m.Chase),
     "Exchange": (m.Attempt, m.OutboxMessage, m.Inbound),
-    "Proof": (m.Document, m.Check, EvidenceEvent),
+    "Proof": (m.Document, m.Reading, m.Check, EvidenceEvent),
     "Outcome": (m.WriteBack, m.Escalation),
     "Policy": (m.BrokerConfig, m.Consent),
 }
@@ -51,7 +51,7 @@ SHAPES: dict[str, type] = {
 ENUMS: tuple[type[Enum], ...] = (
     m.ChaseState, m.Step, m.Channel, m.Role, m.OperatorRole, m.PartyRole, m.DocType,
     m.RequirementStatus, m.CheckResult, m.EscalationReason, m.EscalationResolution,
-    m.InboundStatus, m.OutboxStatus, m.OutboxPurpose, m.WriteBackStatus,
+    m.InboundStatus, m.OutboxStatus, m.OutboxPurpose, m.ReadingStatus, m.WriteBackStatus,
     m.ConsentStatus, m.ConsentSource,
 )  # fmt: skip
 _ENUM_NAMES = {e.__name__ for e in ENUMS}

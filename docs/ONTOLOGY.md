@@ -10,9 +10,9 @@ and a test fails if they fall behind.
 
 | | |
 | --- | --- |
-| Version | `1.0.0` |
-| Id | `urn:talonsight:talon-chase:ontology:1.0.0` |
-| Schema SHA-256 | `65e6c83d89b71ee42ff3974b45dcc20ccf23ca57cbc8fe09d99abeea8a896168` |
+| Version | `2.0.0` |
+| Id | `urn:talonsight:talon-chase:ontology:2.0.0` |
+| Schema SHA-256 | `c5c7808db79e5ee63065edd1114d1d2e1278ca621fd959a8944b32b7c5e4bb2b` |
 | Schema | [`ontology/talon-chase.schema.json`](../ontology/talon-chase.schema.json) |
 | JSON-LD context | [`ontology/talon-chase.context.jsonld`](../ontology/talon-chase.context.jsonld) |
 
@@ -40,7 +40,7 @@ and a test fails if they fall behind.
 | Freight | The loads and the businesses on them that carriers must never see named. | [Load](#load), [Party](#party) |
 | Need | What a load still needs, and the chase that obtains it. | [Requirement](#requirement), [Chase](#chase) |
 | Exchange | Requests the agent decides on, their delivery, and what comes back. | [Attempt](#attempt), [OutboxMessage](#outboxmessage), [Inbound](#inbound) |
-| Proof | Documents, the verdict on each, and the hash-chained record of everything. | [Document](#document), [Check](#check), [EvidenceEvent](#evidenceevent) |
+| Proof | Documents, the verdict on each, and the hash-chained record of everything. | [Document](#document), [Reading](#reading), [Check](#check), [EvidenceEvent](#evidenceevent) |
 | Outcome | Filing in the broker's system, and loads handed to a person. | [WriteBack](#writeback), [Escalation](#escalation) |
 | Policy | How a broker wants chasing done, and who agreed to be texted. | [BrokerConfig](#brokerconfig), [Consent](#consent) |
 
@@ -196,6 +196,7 @@ The agent's effort to obtain one requirement.
 | `reply_to_contact_id` | string | Who sent the last document; re-asks go to them. → [Contact](#contact) (optional) |
 | `passed_document_id` | string | The document that passed. → [Document](#document) (optional) |
 | `writeback_id` | string | The current filing. → [WriteBack](#writeback) (optional) |
+| `reading_inbound_id` | string | The carrier message whose files are being read; set while RECEIVED. → [Inbound](#inbound) (optional) |
 | `closed_at_ms` | integer or null | When it closed. |
 | `closed_reason` | string | 'filed' or 'escalation_acknowledged'. |
 | `kill_noted` | boolean | A blocked step was already recorded. |
@@ -298,6 +299,29 @@ A file received for a load.
 | `received_at_ms` | integer | When it arrived. |
 | `doc_type` | [DocType](#doctype) | What the reader says it is. |
 | `extraction` | [Extraction](#extraction) | What the reader read from it. |
+| `read_at_ms` | integer or null | When the reading was settled: the reader answered, or gave up. Null while unread. |
+| `reader` | string | Which reader read it; empty while unread or when none could. |
+
+### Reading
+
+*entity*
+
+One file to be read. Written in the same transaction as its document; read afterwards by the reading desk, outside the engine, with retries.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | Identifier. |
+| `broker_id` | string | The broker the file was sent to. → [Broker](#broker) |
+| `load_id` | string | The load the document is filed under. → [Load](#load) |
+| `document_id` | string | The document to read. → [Document](#document) |
+| `created_at_ms` | integer | When it was queued. |
+| `next_attempt_at_ms` | integer | When it may next be tried. |
+| `status` | [ReadingStatus](#readingstatus) | Where the reading stands. |
+| `tries` | integer | Reader calls started. |
+| `claim_token` | string | Which desk holds it while READING. |
+| `lease_until_ms` | integer | When that hold expires. |
+| `last_error` | string | The last reader error. |
+| `finished_at_ms` | integer or null | When it reached DONE or FAILED. |
 
 ### Check
 
@@ -464,6 +488,7 @@ What the reader saw on a document.
 | `page_count` | integer | Pages received. |
 | `exception_notes` | list of string | Shortage, damage or refusal noted by the receiver. |
 | `confidence` | integer | How sure the reader is, 0 to 100. |
+| `doubts` | list of string | What the reader could not make out, in short phrases for a person. |
 
 ## Enumerations
 
@@ -477,7 +502,7 @@ Where one chase for paperwork stands.
 
 The next thing a chase will do.
 
-`FIRST_EMAIL`, `DRIVER_SMS`, `SECOND`, `THIRD`, `ESCALATE`, `REASK`, `WRITEBACK`, `NONE`
+`FIRST_EMAIL`, `DRIVER_SMS`, `SECOND`, `THIRD`, `ESCALATE`, `REASK`, `READ`, `WRITEBACK`, `NONE`
 
 ### Channel
 
@@ -541,6 +566,10 @@ How a person finished an escalation.
 
 `CARRIER_REQUEST`, `PACKET`
 
+### ReadingStatus
+
+`PENDING`, `READING`, `DONE`, `FAILED`
+
 ### WriteBackStatus
 
 `PENDING`, `SUCCEEDED`, `FAILED`
@@ -571,7 +600,8 @@ Each evidence kind has exactly these payload fields, all required. See
 | `config.changed` | `by`: str, `fields`: str[] |
 | `consent.recorded` | `consent_id`: str, `contact_id`: str, `seq`: int, `status`: ConsentStatus, `source`: ConsentSource, `by`: str, `inbound_id`: str |
 | `contact.approved` | `contact_id`: str, `carrier_id`: str, `by`: str |
-| `document.received` | `document_id`: str, `sha256`: str, `filename`: str, `doc_type`: DocType, `rerouted_from_load`: str |
+| `document.arrived` | `document_id`: str, `sha256`: str, `filename`: str, `rerouted_from_load`: str |
+| `document.read` | `document_id`: str, `sha256`: str, `reader`: str, `doc_type`: DocType, `readable`: bool, `confidence`: int |
 | `document.rerouted` | `document_id`: str, `sha256`: str, `to_load`: str |
 | `escalation.acknowledged` | `escalation_id`: str, `by`: str, `resolution`: EscalationResolution, `note`: str |
 | `escalation.opened` | `escalation_id`: str, `reason`: EscalationReason, `detail`: str |
@@ -597,6 +627,8 @@ Each evidence kind has exactly these payload fields, all required. See
 | `outbound.blocked` | `step`: Step |
 | `outbound.refused` | `reason`: str |
 | `outbound.switch` | `enabled`: bool, `by`: str |
+| `reading.failed` | `reading_id`: str, `document_id`: str, `tries`: int, `permanent`: bool, `error`: str |
+| `reading.retry` | `reading_id`: str, `document_id`: str, `try`: int, `error`: str, `next_attempt_at_ms`: int |
 | `requirement.closed` | `requirement_id`: str, `status`: RequirementStatus, `document_id`: str |
 | `sms.skipped` | `step`: Step, `reason`: str |
 | `writeback.failed` | `writeback_id`: str, `adapter`: str, `attempt`: int, `transient`: bool, `error`: str |
@@ -609,6 +641,7 @@ now and stores refuse to append them.
 
 | Kind | Payload |
 | --- | --- |
+| `document.received` | `document_id`: str, `sha256`: str, `filename`: str, `doc_type`: DocType, `rerouted_from_load`: str |
 | `sms.stopped` | `contact_id`: str, `inbound_id`: str |
 
 ## Rules
@@ -640,6 +673,7 @@ the synthetic evaluation requires zero.
 | TC-19 | Every evidence chain verifies, every load's chain starts with load.received, and every chase is on its load's chain. |
 | TC-20 | No carrier request contains anything the ontology marks sensitive. |
 | TC-21 | Active operators sign in with distinct email addresses. |
+| TC-22 | A document is read once: an unread document has exactly one reading in hand, a settled one has none, and a chase waits in RECEIVED only for a file still unread. |
 
 ## Changing the ontology
 

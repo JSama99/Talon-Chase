@@ -15,7 +15,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from chase.domain import outbound
-from chase.domain.checks import CheckOutcome, Extraction, check_document
+from chase.domain.checks import CheckOutcome, Extraction, cannot_read, check_document
 from chase.domain.clock import Clock, IdGen
 from chase.domain.models import (
     MINUTE_MS,
@@ -47,6 +47,8 @@ from chase.domain.models import (
     OutboxStatus,
     Party,
     PartyRole,
+    Reading,
+    ReadingStatus,
     Requirement,
     RequirementStatus,
     Role,
@@ -109,6 +111,7 @@ class ChaseEngine:
         self.sms = sms
         self.classifier = classifier
         self.reader = reader
+        self.reads_inline = bool(getattr(reader, "inline", False))
         self.secret = secret
         self.base_url = base_url.rstrip("/")
         packet = PacketEmailAdapter(store, clock, ids)
@@ -346,7 +349,7 @@ class ChaseEngine:
             chase = self._need(Chase, chase_id)
             if (
                 chase.state not in ACTIVE_STATES
-                or chase.next_step is Step.NONE
+                or chase.next_step in (Step.NONE, Step.READ)  # READ is the reading desk's
                 or chase.next_action_at_ms > self.clock.now_ms()
             ):
                 break
@@ -779,8 +782,7 @@ class ChaseEngine:
 
         if chase.state not in ACCEPTS_DOCUMENTS:
             # The chase is finished or with a person. Keep what arrived; change nothing.
-            for attachment in inbound.attachments:
-                self._store_document(load, inbound, attachment)
+            self._take_in(load, inbound)
             self._record(
                 load.id, "inbound.late", {"inbound_id": inbound.id, "chase_state": chase.state}
             )
@@ -824,11 +826,10 @@ class ChaseEngine:
 
     # ----------------------------------------------------------------- documents
 
-    def _store_document(
-        self, load: Load, inbound: Inbound, attachment: Attachment, extra: dict | None = None
-    ) -> tuple[Document, Extraction]:
-        content = self.store.get_blob(attachment.content_sha256) or b""
-        extraction = self.reader.read(attachment.filename, content)
+    def _new_document(
+        self, load: Load, inbound: Inbound, attachment: Attachment, moved_from: str = ""
+    ) -> Document:
+        """Keep a file under a load. It is unread until ``_set_reading``."""
         document = Document(
             id=self.ids.new("doc"),
             load_id=load.id,
@@ -836,19 +837,93 @@ class ChaseEngine:
             filename=attachment.filename,
             content_sha256=attachment.content_sha256,
             received_at_ms=self.clock.now_ms(),
-            doc_type=extraction.doc_type,
-            extraction=extraction.to_dict(),
+            extraction=Extraction().to_dict(),
         )
         self.store.put(document)
-        payload = {
-            "document_id": document.id,
-            "sha256": document.content_sha256,
-            "filename": document.filename,
-            "doc_type": document.doc_type,
-            "rerouted_from_load": "",
-        }
-        self._record(load.id, "document.received", payload | (extra or {}))
-        return document, extraction
+        self._record(
+            load.id,
+            "document.arrived",
+            {
+                "document_id": document.id,
+                "sha256": document.content_sha256,
+                "filename": document.filename,
+                "rerouted_from_load": moved_from,
+            },
+        )
+        return document
+
+    def _set_reading(self, document: Document, extraction: Extraction, reader: str) -> None:
+        """Write what a reader reported onto the document, and record that it did."""
+        document.doc_type = extraction.doc_type
+        document.extraction = extraction.to_dict()
+        document.read_at_ms = self.clock.now_ms()
+        document.reader = reader
+        self.store.put(document)
+        self._record(
+            document.load_id,
+            "document.read",
+            {
+                "document_id": document.id,
+                "sha256": document.content_sha256,
+                "reader": reader,
+                "doc_type": extraction.doc_type,
+                "readable": extraction.readable,
+                "confidence": extraction.confidence,
+            },
+        )
+
+    def _take_in(self, load: Load, inbound: Inbound) -> list[Document]:
+        """Keep every file of a message and queue each one to be read.
+
+        The engine never calls a reader that talks to a service: it writes a
+        ``Reading`` in this transaction and the reading desk (``chase/reading.py``)
+        reads the file afterwards. Only an inline reader, a pure function of the
+        bytes, answers here; it goes through the same records and evidence.
+        """
+        now = self.clock.now_ms()
+        documents = []
+        for attachment in inbound.attachments:
+            document = self._new_document(load, inbound, attachment)
+            reading = Reading(
+                id=self.ids.new("rdg"),
+                broker_id=load.broker_id,
+                load_id=load.id,
+                document_id=document.id,
+                created_at_ms=now,
+                next_attempt_at_ms=now,
+            )
+            if self.reads_inline:
+                content = self.store.get_blob(document.content_sha256) or b""
+                extraction = self.reader.read(document.filename, content)
+                reading.status = ReadingStatus.DONE
+                reading.tries = 1
+                reading.finished_at_ms = now
+                self.store.put(reading)
+                self._set_reading(document, extraction, self.reader.name)
+            else:
+                self.store.put(reading)
+            documents.append(document)
+        return documents
+
+    def reading_done(self, document_id: str, extraction: Extraction, reader: str) -> None:
+        """The reading desk's reader answered. Must run inside the desk's guard."""
+        document = self._need(Document, document_id)
+        if document.read_at_ms is not None:
+            return  # settled already; the first answer stands
+        self._set_reading(document, extraction, reader)
+        self._check_when_read(document.load_id)
+
+    def reading_abandoned(self, document_id: str, why: str) -> None:
+        """The reading desk gave up on a file. Nothing read it, so nothing is claimed
+        about it: zero confidence hands the document to a person, and the carrier is
+        not asked for a better copy of a file nobody looked at."""
+        document = self._need(Document, document_id)
+        if document.read_at_ms is not None:
+            return
+        document.extraction = cannot_read(why).to_dict()
+        document.read_at_ms = self.clock.now_ms()
+        self.store.put(document)
+        self._check_when_read(document.load_id)
 
     def _open_sibling_loads(self, load: Load) -> list[Load]:
         """Other loads of this broker and carrier that are still waiting for a POD."""
@@ -864,14 +939,44 @@ class ChaseEngine:
     def _handle_documents(
         self, chase: Chase, load: Load, inbound: Inbound, sender: Contact | None, cfg: BrokerConfig
     ) -> None:
+        """Files arrived for an open chase. The chase waits in RECEIVED until every one
+        of them has been read; ``_check_when_read`` then judges them together."""
         if sender is not None:
             chase.reply_to_contact_id = sender.id
         self._move(chase, ChaseState.RECEIVED)
+        chase.reading_inbound_id = inbound.id
+        self._schedule(chase, Step.READ, self.clock.now_ms())
+        self.store.put(chase)
+        self._take_in(load, inbound)
+        self._check_when_read(load.id)
+
+    def _check_when_read(self, load_id: str) -> None:
+        """Judge the files a chase is waiting on, once all of them have been read."""
+        chases = self.store.find(Chase, load_id=load_id)
+        if not chases:
+            return
+        chase = chases[0]
+        if chase.state is not ChaseState.RECEIVED or not chase.reading_inbound_id:
+            return  # a late file, or a person took the load over while it was being read
+        inbound = self._need(Inbound, chase.reading_inbound_id)
+        position: dict[str, int] = {}
+        for index, attachment in enumerate(inbound.attachments):
+            position.setdefault(attachment.content_sha256, index)
+        documents = sorted(
+            (d for d in self.store.find(Document, inbound_id=inbound.id) if d.load_id == load_id),
+            key=lambda d: (position.get(d.content_sha256, 0), d.received_at_ms, d.id),
+        )
+        if any(d.read_at_ms is None for d in documents):
+            return
+        load = self._need(Load, load_id)
+        cfg = self._need(Broker, chase.broker_id).config
+        sender = None if inbound.trusted else self._find_sender(inbound, self._known_contacts(load))
+        chase.reading_inbound_id = ""
         self._move(chase, ChaseState.CHECKING)
         siblings = self._open_sibling_loads(load)
         results: list[tuple[Document, Extraction, CheckOutcome]] = []
-        for attachment in inbound.attachments:
-            document, extraction = self._store_document(load, inbound, attachment)
+        for document in documents:
+            extraction = Extraction.from_dict(document.extraction)
             outcome = check_document(extraction, load, siblings, cfg)
             self._log_check(chase, document, outcome)
             results.append((document, extraction, outcome))
@@ -882,8 +987,9 @@ class ChaseEngine:
         for document, extraction, outcome in results:
             if outcome.result is CheckResult.REROUTE:
                 by_target.setdefault(outcome.reroute_load_id, []).append((document, extraction))
-        for target_id, documents in by_target.items():
-            self._reroute(load, target_id, documents, inbound, sender)
+        for target_id, moved in by_target.items():
+            self._reroute(load, target_id, moved, inbound, sender)
+        self._drain(chase.id)
 
     def _log_check(self, chase: Chase, document: Document, outcome: CheckOutcome) -> None:
         check = Check(
@@ -975,18 +1081,17 @@ class ChaseEngine:
                     "to_load": target.id,
                 },
             )
-        copies = [
-            (
-                self._store_document(
-                    target,
-                    inbound,
-                    Attachment(document.filename, document.content_sha256),
-                    {"rerouted_from_load": source.id},
-                )[0],
-                extraction,
+        copies = []
+        for document, extraction in documents:
+            copy = self._new_document(
+                target,
+                inbound,
+                Attachment(document.filename, document.content_sha256),
+                moved_from=source.id,
             )
-            for document, extraction in documents
-        ]
+            # Read once: the copy carries the reading its original was given.
+            self._set_reading(copy, extraction, document.reader)
+            copies.append((copy, extraction))
         if not chases or chases[0].state not in ACCEPTS_DOCUMENTS:
             # Kept on the target load for a person to see; its chase is not reopened.
             self._record(
@@ -1142,6 +1247,7 @@ class ChaseEngine:
         if can_transition(chase.state, ChaseState.ESCALATED):
             self._move(chase, ChaseState.ESCALATED)
         chase.next_step = Step.NONE
+        chase.reading_inbound_id = ""  # files still being read are kept, not waited for
         self.store.put(chase)
         escalation = Escalation(
             id=self.ids.new("esc"),

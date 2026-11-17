@@ -75,7 +75,11 @@ resolutions, and a note.
 - Top: load number, carrier, state, and when it became ready to invoice if it did.
 - A timeline, newest last, built from the evidence events: asked, replied, document
   received, check result with reasons, filed, escalated. Group the rapid state changes
-  into one line ("Document checked: unsigned, asked again").
+  into one line ("Document checked: unsigned, asked again"). While a file is being read
+  the load's state reads "Reading"; a file the reader never answered for shows "Could
+  not read the document", and the provider's error stays in the evidence, not on screen.
+- A `LOW_CONFIDENCE` escalation names what the reader was unsure of ("Not sure about:
+  whether the receiver signed") when it says, and the percentage only when it does not.
 - The document itself with its check result beside it.
 - If escalated: the reason, the detail, the carrier's phone numbers, and the
   resolve control (above).

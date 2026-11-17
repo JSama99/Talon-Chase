@@ -73,6 +73,7 @@ class Step(StrEnum):
     THIRD = "THIRD"
     ESCALATE = "ESCALATE"
     REASK = "REASK"
+    READ = "READ"  # waiting for the reader; the reading desk moves it on, not the tick
     WRITEBACK = "WRITEBACK"
     NONE = "NONE"
 
@@ -177,6 +178,13 @@ class OutboxStatus(StrEnum):
 class OutboxPurpose(StrEnum):
     CARRIER_REQUEST = "CARRIER_REQUEST"  # asks a carrier for paperwork
     PACKET = "PACKET"  # a ready-to-file packet for the broker
+
+
+class ReadingStatus(StrEnum):
+    PENDING = "PENDING"  # waiting to be read, or waiting to be tried again
+    READING = "READING"  # claimed by a reading desk until lease_until_ms
+    DONE = "DONE"  # the reader answered
+    FAILED = "FAILED"  # gave up; the document goes to a person unread
 
 
 class WriteBackStatus(StrEnum):
@@ -439,6 +447,12 @@ class Chase:
         "The document that passed.", ref="Document", optional=True, default=""
     )
     writeback_id: str = f("The current filing.", ref="WriteBack", optional=True, default="")
+    reading_inbound_id: str = f(
+        "The carrier message whose files are being read; set while RECEIVED.",
+        ref="Inbound",
+        optional=True,
+        default="",
+    )
     closed_at_ms: int | None = f("When it closed.", default=None)
     closed_reason: str = f("'filed' or 'escalation_acknowledged'.", default="")
     kill_noted: bool = f("A blocked step was already recorded.", default=False)
@@ -540,6 +554,30 @@ class Document:
     extraction: dict[str, Any] = f(
         "What the reader read from it.", shape="Extraction", default_factory=dict
     )
+    read_at_ms: int | None = f(
+        "When the reading was settled: the reader answered, or gave up. Null while unread.",
+        default=None,
+    )
+    reader: str = f("Which reader read it; empty while unread or when none could.", default="")
+
+
+@dataclass
+class Reading:
+    """One file to be read. Written in the same transaction as its document; read
+    afterwards by the reading desk, outside the engine, with retries."""
+
+    id: str = f("Identifier.")
+    broker_id: str = f("The broker the file was sent to.", ref="Broker")
+    load_id: str = f("The load the document is filed under.", ref="Load")
+    document_id: str = f("The document to read.", ref="Document")
+    created_at_ms: int = f("When it was queued.")
+    next_attempt_at_ms: int = f("When it may next be tried.")
+    status: ReadingStatus = f("Where the reading stands.", default=ReadingStatus.PENDING)
+    tries: int = f("Reader calls started.", default=0)
+    claim_token: str = f("Which desk holds it while READING.", default="")
+    lease_until_ms: int = f("When that hold expires.", default=0)
+    last_error: str = f("The last reader error.", default="")
+    finished_at_ms: int | None = f("When it reached DONE or FAILED.", default=None)
 
 
 @dataclass
@@ -597,7 +635,7 @@ class Escalation:
 
 ENTITY_TYPES = (
     Broker, Operator, Carrier, Contact, Party, Load, Requirement, Chase, Attempt,
-    Inbound, Document, Check, Escalation, WriteBack, OutboxMessage, Consent,
+    Inbound, Document, Reading, Check, Escalation, WriteBack, OutboxMessage, Consent,
 )  # fmt: skip
 
 # Value types: stored inside an entity, never on their own.

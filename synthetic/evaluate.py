@@ -42,6 +42,7 @@ from chase.evidence import verify_chain
 from chase.ontology.constraints import check_store
 from chase.outbox import OutboxDispatcher
 from chase.reader.rules import RuleBasedClassifier, StandInReader
+from chase.reading import ReadingDesk
 from chase.store.memory import MemoryStore
 from chase.writeback.adapters import FakeApiAdapter
 from synthetic.generate import SEED, Fixture, Pack, build_pack
@@ -73,7 +74,14 @@ def _observe(fixture: Fixture, store: MemoryStore, tms: FakeApiAdapter, sha: str
     return observed
 
 
-def run(seed: int = SEED) -> dict:
+class _ReadByTheDesk(StandInReader):
+    """The stand-in, but read the way a real reader is: queued by the engine and
+    read by the reading desk. The run must come out the same either way."""
+
+    inline = False
+
+
+def run(seed: int = SEED, through_desk: bool = False) -> dict:
     pack: Pack = build_pack(START_MS, seed)
     store, clock = MemoryStore(), FakeClock(START_MS)
     email, sms, tms = FakeEmail(), FakeSms(), FakeApiAdapter()
@@ -84,7 +92,7 @@ def run(seed: int = SEED) -> dict:
         email=email,
         sms=sms,
         classifier=RuleBasedClassifier(),
-        reader=StandInReader(),
+        reader=_ReadByTheDesk() if through_desk else StandInReader(),
         adapters=[tms],
         secret=b"synthetic",
     )
@@ -99,11 +107,12 @@ def run(seed: int = SEED) -> dict:
         )
 
     outbox = OutboxDispatcher(engine)
+    desk = ReadingDesk(engine)
 
     def settle() -> None:
         for _ in range(10):
-            report = outbox.dispatch()
-            if not report.changed and not engine.tick():
+            changed = outbox.dispatch().changed + desk.work().changed
+            if not changed and not engine.tick():
                 return
 
     def advance(duration_ms: int, step_ms: int = 30 * MINUTE_MS) -> None:

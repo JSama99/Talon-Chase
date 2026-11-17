@@ -13,9 +13,10 @@ the document, files it into the broker's system (TMS), and hands the load to a p
 when it is stuck or anything looks risky. Every step is recorded as tamper-evident
 evidence.
 
-Status: version 1, not yet used by a broker. Email is real (Resend). Texts, the
-document reader, the reply classifier and the TMS connection are interfaces with
-in-memory or rule-based stand-ins.
+Status: version 1, not yet used by a broker. Email is real (Resend). The document
+reader is real (Claude) once `ANTHROPIC_API_KEY` is set, but has not been called live
+or measured on real PODs. Texts, the reply classifier and the TMS connection are
+interfaces with in-memory or rule-based stand-ins.
 
 ## Commands
 
@@ -48,13 +49,14 @@ skipped, so run them before changing anything in `chase/store/` or `migrations/`
 | `chase/domain/` | Pure code, no I/O: models (dataclasses), the state machine, the schedule, risk rules, document checks, outbound templates and the outbound guard, upload tokens |
 | `chase/engine.py` | The orchestration: intake, tick, inbound, checks, write-back, escalation, bounces. The only place that changes chase state |
 | `chase/outbox.py` | The outbox: the engine enqueues messages; the dispatcher claims, sends, retries and gives up |
+| `chase/reading.py` | The reading desk: the engine queues files; the desk claims, reads (no lock held), retries and gives up |
 | `chase/ports.py` | Interfaces to the outside: email, text, classifier, reader, TMS adapter, store |
 | `chase/channels/` | `resend.py` (real email: send, fetch replies, signatures); `fakes.py` (in-memory email and text) |
-| `chase/reader/` | Rule-based reply classifier and a stand-in document reader |
+| `chase/reader/` | `claude.py` (the Claude document reader: prompt, schema, report to facts); `files.py` (file type from bytes, page count, upright and sized pages); `evaluate.py` and `samples.py` (measuring a reader); `rules.py` (reply classifier and the stand-in reader) |
 | `chase/writeback/` | TMS adapters: an API stand-in, and the emailed packet that works with any TMS |
 | `chase/store/` | `MemoryStore` and `SqlStore` (SQLite and Postgres); tables are built from the models |
 | `chase/evidence/` | Canonical JSON, the per-load SHA-256 hash chain, the verifier |
-| `chase/ontology/` | The schema, evidence payload shapes, 21 cross-record rules (TC-01 to TC-21), and the builder of the published files |
+| `chase/ontology/` | The schema, evidence payload shapes, 22 cross-record rules (TC-01 to TC-22), and the builder of the published files |
 | `chase/api/` | FastAPI: `app.py` (routes), `main.py` (reads settings and wires everything), `resend_hooks.py` (Resend webhook) |
 | `chase/app/` | Broker screens: sign-in, server-rendered pages, timeline wording |
 | `migrations/` | Alembic; one numbered file per schema change |
@@ -68,7 +70,7 @@ skipped, so run them before changing anything in `chase/store/` or `migrations/`
 ## How a chase runs
 
 ```
-load delivered -> ask carrier -> file arrives? -yes-> check document -pass-> file to TMS -> closed
+load delivered -> ask carrier -> file arrives? -yes-> read -> check document -pass-> file to TMS -> closed
                      ^                | no                  | fail (say why)
                      +-- wait, retry -+<--------------------+
                               | 3 tries, no file          any risk flag, any step
@@ -79,6 +81,12 @@ The states and every legal move between them are in `chase/domain/states.py`
 (`ALLOWED`). Nothing else may change `chase.state`; the engine calls `_move`.
 A chase closes two ways only: a passed check and a successful write-back, or a person
 resolving the escalation.
+
+A file is kept and queued in the engine's transaction; the chase then rests in
+`RECEIVED` (next step `READ`) and nothing is sent to the carrier. The reading desk
+reads the file and calls `engine.reading_done` or `engine.reading_abandoned`; once
+every file of that message has been read, `_check_when_read` checks them together.
+The tick never moves a chase out of `RECEIVED`; only the desk, or a person, does.
 
 Time moves forward only through `engine.tick()`. In the service, `POST /v1/tick`
 runs it, or the service runs it itself every `CHASE_TICK_SECONDS`. Each tick does what
@@ -107,14 +115,23 @@ Each is enforced by tests; breaking one fails CI.
    by an operator turns texts back on.
 9. **Kill switches** (global, per broker) stop all outbound messages and write-backs.
    Queued messages are held, not dropped.
-10. **Deciding and sending are separate.** The engine writes each message to the outbox
-    in the same transaction as its decision; the dispatcher sends it later with a stable
-    idempotency key. Never call a provider from the engine.
+10. **Deciding and sending are separate, and so are keeping and reading.** The engine
+    writes each message to the outbox in the same transaction as its decision; the
+    dispatcher sends it later with a stable idempotency key. Likewise the engine writes
+    a `Reading` for each file and the reading desk reads it later. Never call a provider
+    or a model from the engine. A reader may run inline only if it is a pure function of
+    the bytes (`inline = True`, the stand-in).
 11. **Every step is evidence.** Sends, replies, documents, checks, state changes and
     write-backs each append an event to the load's hash chain (`engine._record`).
 12. **Records obey the ontology.** Every record and evidence payload is checked against
-    a closed schema when saved, and the 21 cross-record rules are checked after every
+    a closed schema when saved, and the 22 cross-record rules are checked after every
     test (an autouse fixture in `tests/conftest.py`) and in the synthetic run.
+13. **The model describes; code decides.** The document reader reports what is on a
+    page. It is never told the load, never shown the file name, never asked whether
+    the document is good or for a confidence number. Confidence is set in
+    `chase/reader/claude.py` (`CONFIDENCE`) from what the model could not make out, and
+    any doubt about the signature, the date, a reference number or handwriting sends
+    the document to a person. A file nobody read is never sent back to the carrier.
 
 ## Making common changes
 
@@ -136,9 +153,17 @@ missing.
 **A new escalation reason.** Add it to `EscalationReason` in `chase/domain/models.py`,
 give it a title in `REASON_TITLES` in `chase/app/wording.py`, and describe it in `docs/UI.md`.
 
-**A new cross-record rule.** Add a function decorated with `@rule("TC-22", "<one
+**A new cross-record rule.** Add a function decorated with `@rule("TC-23", "<one
 sentence>")` in `chase/ontology/constraints.py`, using the next free number. It
 receives a `Snapshot` of the store and yields a `Violation` for each breach. Regenerate the ontology.
+
+**Changing the reader's prompt, schema, model or confidence table.** Bump
+`PROMPT_VERSION` in `chase/reader/claude.py` when `SYSTEM`, `ASK` or `SCHEMA` changes,
+so the evidence says which instructions read each document. Keep `SCHEMA` inside what
+structured outputs accept (`test_the_schema_stays_inside_what_the_api_accepts`). Run
+`python -m chase.reader.evaluate` on labelled PODs before and after, and do not merge
+a change that files a document it should not have or lets a note miss a person. See
+[docs/READER.md](docs/READER.md).
 
 **A new outside service** (texts, a document reader, a TMS):
 1. Implement the matching interface in `chase/ports.py` in a new module under
@@ -193,12 +218,17 @@ start on a missing or malformed required value, and says which one.
 | `RESEND_VERIFIED_DOMAINS` | with Resend | Domains verified in Resend, comma-separated |
 | `RESEND_SHARED_FROM` | with Resend | Sender for brokers without a verified domain |
 | `RESEND_INBOUND_DOMAIN` | with Resend | Where replies arrive (`chase+<broker id>@...`) |
+| `ANTHROPIC_API_KEY` | no | Turns on the Claude document reader. Without it, real files go to a person |
+| `CHASE_READER_MODEL` | no | Which Claude model reads; default `claude-opus-5-5`. Needs the key |
 
 ## Outside services
 
 - **Resend** (email): sending domain and receiving at `mail.talonsight.com`, both
   verified and tested live. Replies arrive by webhook at `/webhooks/resend`. See
   [docs/EMAIL.md](docs/EMAIL.md).
+- **Anthropic** (document reader): built against the API documentation, tested only
+  against a fake. Not called live, not measured on real PODs. See
+  [docs/READER.md](docs/READER.md).
 - **Database:** Postgres 16 is what the migrations are tested against. The chosen
   hosted database is Supabase (Session pooler address).
 - **Hosting:** not deployed yet, and the host is open. `render.yaml` and
@@ -228,7 +258,7 @@ dispatcher, not an engineer. More in [docs/UI.md](docs/UI.md).
 
 ## Not built yet
 
-Texts (Twilio), a real reply classifier and document reader (tested against labelled
-PODs), a TMS adapter, object storage for files (they live in the database today),
+Texts (Twilio), a real reply classifier, a document reader measured on labelled
+PODs (the reader is built; the measuring is not done), a TMS adapter, object storage for files (they live in the database today),
 public holidays in the schedule, and external anchoring of evidence. See the README's
 "What is not built" and [docs/VALIDATION.md](docs/VALIDATION.md).

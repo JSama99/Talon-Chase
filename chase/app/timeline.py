@@ -35,6 +35,8 @@ QUIET = frozenset(
         "message.reclaimed",
         "message.duplicate",
         "requirement.closed",  # shown as the load's status
+        "document.read",  # the check line that follows says what was found
+        "reading.retry",  # retried until read or given up on; both are told
         "writeback.pending",  # followed by succeeded or failed
     }
 )
@@ -121,6 +123,20 @@ def _document(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry | None:
     if moved_from:
         return Entry(e.at_ms, "Document arrived on another load and was moved here")
     return None  # the reply line already names the file
+
+
+def _reading_failed(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
+    return Entry(
+        e.at_ms,
+        "Could not read the document",
+        (
+            "The reader could not take this file."
+            if e.payload["permanent"]
+            else "The reader was unavailable."
+        )
+        + " The file is kept for you to look at.",
+        "bad",
+    )
 
 
 def _rerouted(e: EvidenceEvent, ctx: dict[str, Any]) -> Entry:
@@ -228,8 +244,10 @@ _TELL: dict[str, Teller] = {
     "inbound.received": _inbound,
     "inbound.held": _held,
     "inbound.late": _late,
-    "document.received": _document,
+    "document.arrived": _document,
+    "document.received": _document,  # chains written before ontology 2.0.0
     "document.rerouted": _rerouted,
+    "reading.failed": _reading_failed,
     "check.completed": _check,
     "writeback.succeeded": _writeback_ok,
     "writeback.failed": _writeback_failed,

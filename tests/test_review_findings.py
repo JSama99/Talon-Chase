@@ -54,7 +54,7 @@ def test_rerouted_documents_for_one_load_are_judged_together(world: World, order
     assert world.tms.documents_on(load_b.load_number) == []
     assert world.store.get(Load, load_b.id).ready_to_invoice_at_ms is None
     # Both documents were recorded on B, and A was asked again.
-    received = [e for e in world.store.evidence(load_b.id) if e.kind == "document.received"]
+    received = [e for e in world.store.evidence(load_b.id) if e.kind == "document.arrived"]
     assert len(received) == 2
     assert world.chase(load_a).state is ChaseState.ASKED
 

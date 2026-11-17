@@ -17,7 +17,7 @@ import threading
 from enum import Enum
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -51,6 +51,7 @@ from chase.domain.tokens import InvalidToken, read_upload_token
 from chase.engine import ChaseEngine
 from chase.evidence import canonical_json, sha256_hex
 from chase.outbox import OutboxDispatcher
+from chase.reading import ReadingDesk
 
 log = logging.getLogger("chase.tick")
 
@@ -230,6 +231,8 @@ def create_app(
 
     # Claims and completions take the lock; the provider call in between does not.
     dispatcher = OutboxDispatcher(engine, guard=locked)
+    # The same for reading: the model is called with no lock and no transaction held.
+    desk = ReadingDesk(engine, guard=locked)
 
     def admin(x_api_key: str = Header(default="")) -> None:
         if not hmac.compare_digest(x_api_key.encode(), api_key.encode()):
@@ -411,7 +414,7 @@ def create_app(
         return run(intake)
 
     @app.post("/v1/inbound", dependencies=[Depends(admin)])
-    async def post_inbound(body: InboundIn, request: Request) -> dict:
+    async def post_inbound(body: InboundIn, request: Request, later: BackgroundTasks) -> dict:
         if int(request.headers.get("content-length", "0")) > MAX_INBOUND_BYTES * 4 // 3 + 65536:
             raise HTTPException(413, "message too large")
         if body.channel is Channel.UPLOAD:
@@ -434,15 +437,36 @@ def create_app(
             attachments=attachments,
             external_id=body.external_id,
         )
+        later.add_task(read_now)
         return plain(inbound)
 
     def do_tick() -> dict:
-        """Do what is due, deliver it, finish what that unblocks."""
+        """Do what is due, deliver it, read what arrived, finish what that unblocks."""
         steps = run(engine.tick)
         report = dispatcher.dispatch()
-        if report.changed:
+        read = desk.work()
+        if report.changed or read.changed:
             steps += run(engine.tick)
-        return {"steps": steps, "dispatch": report.to_dict()}
+        sent = report.to_dict()
+        if read.changed:
+            # A reading can queue a re-ask or a packet: deliver it in this same tick.
+            for key, value in dispatcher.dispatch().to_dict().items():
+                sent[key] += value
+            steps += run(engine.tick)
+        return {"steps": steps, "dispatch": sent, "read": read.to_dict()}
+
+    def read_now() -> None:
+        """Read what just arrived instead of waiting for the next tick. Runs after the
+        response has gone out. A failure here is only a delay: the tick reads whatever
+        is still queued."""
+        if engine.reads_inline:
+            return
+        try:
+            if desk.work().changed:
+                run(engine.tick)
+                dispatcher.dispatch()
+        except Exception:  # noqa: BLE001 - the sender already has their answer
+            log.exception("reading after a file arrived failed; the next tick will retry")
 
     @app.post("/v1/tick", dependencies=[Depends(admin)])
     def tick() -> dict:
@@ -477,6 +501,11 @@ def create_app(
         """Deliver due outbox messages only."""
         return dispatcher.dispatch().to_dict()
 
+    @app.post("/v1/read", dependencies=[Depends(admin)])
+    def read() -> dict:
+        """Read due files only. What a reading unblocks happens on the next tick."""
+        return desk.work().to_dict()
+
     # ---------------------------------------------------------------- carriers
 
     def _token_load(token: str) -> Load:
@@ -493,7 +522,9 @@ def create_app(
         return UPLOAD_PAGE.replace("__LOAD__", safe)
 
     @app.post("/u/{token}")
-    async def upload(token: str, request: Request, filename: str = "upload") -> dict:
+    async def upload(
+        token: str, request: Request, later: BackgroundTasks, filename: str = "upload"
+    ) -> dict:
         _token_load(token)
         if int(request.headers.get("content-length", "0") or 0) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "file too large")
@@ -509,6 +540,7 @@ def create_app(
             run(engine.handle_upload, token, name, content)
         except InvalidToken as exc:
             raise HTTPException(404, "this link is not valid or has expired") from exc
+        later.add_task(read_now)
         return {"received": True}  # nothing about the load or the check goes back to the sender
 
     # ------------------------------------------------------------------ people
@@ -615,6 +647,7 @@ def create_app(
         secret=resend_webhook_secret,
         inbox=resend_inbox,
         inbound_domain=resend_inbound_domain,
+        after_inbound=read_now,
     )
 
     mount_broker_app(

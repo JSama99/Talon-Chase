@@ -33,13 +33,14 @@ strip at the top. Beyond that:
 - **No invented proof.** No logos, quotes, customer counts, percentages or prices. A
   test refuses those words.
 
-Two statements are promises about how the business behaves, which no test can check.
+Three statements are promises about how the business behaves, which no test can check.
 Only the owner can keep them, so read them before publishing:
 
 | Name | The page says |
 | --- | --- |
 | `pilot-price` | The price is not set. Change this line when it is |
 | `privacy` | Signup details are used only to reply about the pilot, are not shared, and are deleted on request |
+| `notyet-reader` | Every document comes to a person until the reader has been measured on real PODs. True without `ANTHROPIC_API_KEY`; with it, only while the broker's confidence floor is 100 ([READER.md](READER.md)) |
 
 ## Changing it
 

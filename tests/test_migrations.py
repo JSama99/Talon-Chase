@@ -5,6 +5,7 @@ Needs a Postgres database: set CHASE_TEST_POSTGRES_URL. Skipped otherwise.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -12,7 +13,7 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 
-from chase.domain.models import ChaseState
+from chase.domain.models import ChaseState, Document, Reading
 from chase.store.sql import METADATA, SqlStore
 from tests.conftest import World, check_worlds
 
@@ -314,3 +315,75 @@ def test_migrations_run_up_and_down_on_sqlite(tmp_path, monkeypatch):
     engine = sa.create_engine(url)
     assert sa.inspect(engine).get_table_names() == ["alembic_version"]
     engine.dispose()
+
+
+def _reading_desk_migration(url: str, monkeypatch) -> None:
+    """0005 marks every existing document as read by the stand-in when it arrived,
+    gives its stored reading the new ``doubts`` list, and ``downgrade`` takes both
+    back out."""
+    monkeypatch.setenv("DATABASE_URL", url)
+    engine = sa.create_engine(url)
+    config = Config("alembic.ini")
+    command.upgrade(config, "0004")
+    old = {
+        "doc_type": "POD",
+        "readable": True,
+        "reference_numbers": ["TC-1"],
+        "signature_present": True,
+        "delivery_date_ms": 5,
+        "page_count": 1,
+        "exception_notes": [],
+        "confidence": 97,
+    }
+    insert = sa.text(
+        "INSERT INTO document (id, load_id, inbound_id, filename, content_sha256, "
+        "received_at_ms, doc_type, extraction) VALUES "
+        "(:id, 'load-1', 'inb-1', 'pod.pdf', :sha, :at, 'POD', :extraction)"
+    ).bindparams(sa.bindparam("extraction", type_=sa.JSON()))
+    with engine.begin() as conn:
+        conn.execute(insert, {"id": "doc-1", "sha": "a" * 64, "at": 1234, "extraction": old})
+        conn.execute(insert, {"id": "doc-2", "sha": "b" * 64, "at": 5678, "extraction": {}})
+
+    command.upgrade(config, "head")
+    command.check(config)
+    store = SqlStore(url)
+    with store.transaction():
+        document = store.get(Document, "doc-1")
+        assert (document.read_at_ms, document.reader) == (1234, "stand-in")
+        assert document.extraction == old | {"doubts": []}
+        store.put(document)  # the carried-over record satisfies the 2.0.0 schema
+        assert store.get(Document, "doc-2").extraction == {"doubts": []}
+        assert store.find(Reading) == []  # nothing is left to read
+    store.engine.dispose()
+    columns = {c["name"] for c in sa.inspect(engine).get_columns("chase")}
+    assert "reading_inbound_id" in columns
+
+    command.downgrade(config, "0004")
+    inspector = sa.inspect(engine)
+    assert "reading" not in inspector.get_table_names()
+    assert not {"read_at_ms", "reader"} & {c["name"] for c in inspector.get_columns("document")}
+    with engine.begin() as conn:
+        rows = dict(conn.execute(sa.text("SELECT id, extraction FROM document")).all())
+    as_dict = {k: json.loads(v) if isinstance(v, str) else v for k, v in rows.items()}
+    assert as_dict == {"doc-1": old, "doc-2": {}}
+    engine.dispose()
+
+
+def test_reading_desk_migration_carries_documents_over_and_back_on_sqlite(tmp_path, monkeypatch):
+    _reading_desk_migration(f"sqlite:///{tmp_path / 'chase.db'}", monkeypatch)
+
+
+@needs_postgres
+def test_reading_desk_migration_carries_documents_over_and_back_on_postgres(monkeypatch):
+    engine = sa.create_engine(URL)
+    METADATA.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS alembic_version"))
+    try:
+        _reading_desk_migration(URL, monkeypatch)
+    finally:
+        # The run ends at 0004: drop every table that revision has, then the marker.
+        with engine.begin() as conn:
+            for table in sa.inspect(conn).get_table_names():
+                conn.execute(sa.text(f'DROP TABLE IF EXISTS "{table}" CASCADE'))
+        engine.dispose()

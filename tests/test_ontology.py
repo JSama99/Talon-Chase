@@ -277,6 +277,7 @@ CORRUPTIONS = {
     "TC-19": _break_tc19,
     "TC-20": lambda s: _change(s, _request(s), body=_request(s).body + " for Acme Foods"),
     "TC-21": _break_tc21,
+    "TC-22": lambda s: _change(s, _one(s, m.Document, load_id="load-1"), read_at_ms=None),
 }
 
 

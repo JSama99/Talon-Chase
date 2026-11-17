@@ -13,6 +13,12 @@ def test_synthetic_evaluation_passes_and_is_deterministic():
     assert run() == first
 
 
+def test_the_synthetic_run_comes_out_the_same_when_files_are_read_by_the_desk():
+    """200 loads, 60 documents: reading through the queue changes when a file is
+    read, never what happens to it."""
+    assert run(through_desk=True) == run()
+
+
 def test_pack_is_seeded():
     a, b, c = build_pack(0), build_pack(0), build_pack(0, seed=7)
     assert [f.extraction for f in a.fixtures] == [f.extraction for f in b.fixtures]

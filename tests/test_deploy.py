@@ -197,7 +197,7 @@ def test_the_database_address_comes_from_the_blueprints_own_database(blueprint, 
 def test_every_setting_the_service_reads_is_provided_and_no_secret_is_committed(web):
     env = _env(web)
     main = (ROOT / "chase" / "api" / "main.py").read_text()
-    read = set(re.findall(r'"((?:CHASE|RESEND)_[A-Z_]+)"', main))
+    read = set(re.findall(r'"((?:CHASE|RESEND|ANTHROPIC)_[A-Z_]+)"', main))
     resend = (ROOT / "chase" / "channels" / "resend.py").read_text()
     read |= set(re.findall(r'"(RESEND_[A-Z_]+)"', resend))
     # CHASE_BASE_URL is left to Render's own address on purpose.
@@ -211,6 +211,8 @@ def test_every_setting_the_service_reads_is_provided_and_no_secret_is_committed(
         "RESEND_SHARED_FROM",
         "RESEND_INBOUND_DOMAIN",
         "CHASE_LOGIN_FROM",
+        "ANTHROPIC_API_KEY",
+        "CHASE_READER_MODEL",
     ):
         assert env[key].get("sync") is False and "value" not in env[key], key
     assert tick_seconds({"CHASE_TICK_SECONDS": env["CHASE_TICK_SECONDS"]["value"]}) == 60

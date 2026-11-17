@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from chase.domain.checks import Extraction
+from chase.domain.checks import Extraction, cannot_read
 from chase.domain.models import Inbound
 from chase.ports import Classification, ReplyLabel
 
@@ -52,10 +52,13 @@ class RuleBasedClassifier:
 
 # The stand-in cannot read a real file. It must not claim it did: zero confidence sends
 # the document to a person, where "unreadable" would tell the carrier their copy is bad.
-CANNOT_READ = Extraction(readable=False, confidence=0)
+CANNOT_READ = cannot_read("the stand-in reader cannot read real files")
 
 
 class StandInReader:
+    name = "stand-in"
+    inline = True  # a pure function of the bytes, so the engine calls it on the spot
+
     def read(self, filename: str, content: bytes) -> Extraction:
         try:
             data = json.loads(content.decode("utf-8"))

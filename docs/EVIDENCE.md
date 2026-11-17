@@ -90,13 +90,20 @@ hash           e416250130e9984385f335a43fc2ef0965c46aa6d2c0db8ef4582714b2b51a8b
 | `message.bounced` | The email provider reported a bounce or spam complaint: address, kind, whether it is permanent. On the load's chain when the message was ours, else `system` |
 | `inbound.unrouted` | On `system`: an email arrived for no broker's mailbox; sender, recipients and provider id are kept |
 | `inbound.received`, `inbound.classified`, `inbound.held`, `inbound.late` | A reply arrived and what was done with it |
-| `document.received`, `document.rerouted` | A file arrived: its SHA-256, name and type |
+| `document.arrived`, `document.rerouted` | A file arrived and was kept: its SHA-256 and name; `rerouted` when it belonged to another open load |
+| `document.read` | What the reader reported about one file: the reader's name (which model and prompt), the type, whether it was readable, the confidence. See [READER.md](READER.md) |
+| `reading.retry`, `reading.failed` | The reader did not answer: the error and when it will be tried again, or that it was given up on and the document went to a person unread |
 | `check.completed` | Result and reasons for one document |
 | `writeback.pending`, `writeback.succeeded`, `writeback.failed`, `writeback.fallback` | Filing attempts, with adapter and receipt; `pending` while the packet email is in the outbox |
 | `escalation.opened`, `escalation.acknowledged` | Handed to a person; resolved by a named operator, with a resolution (`HANDLED_BY_HAND`, `WAIVED`, `DISPUTED`, or `OTHER` with a note) |
 | `requirement.closed` | The document a load needed is in hand (`MET`, naming the document) or a person settled it (`RESOLVED_BY_PERSON`) |
 | `config.changed`, `operator.saved`, `operator.signed_in` | On the broker chain (or `system` for platform operators): who changed which settings, who added or changed an operator, who signed in to the broker screens |
 | `inbound.unmatched`, `contact.approved`, `consent.recorded`, `outbound.switch` | On the broker or system chain; `inbound.unmatched` is a message that could not be tied to a load; `consent.recorded` is a change to a contact's permission to receive texts, with its source (a STOP reply names the message) |
+
+Retired kinds stay valid in old chains and are never written again: `sms.stopped`
+(replaced in ontology 1.0.0 by `consent.recorded`) and `document.received` (replaced
+in 2.0.0 by `document.arrived` and `document.read`, when reading moved out of the
+engine). A verifier accepts them; the broker screens still tell them.
 
 Message bodies and file contents are not in the chain. Their SHA-256 hashes are, so a
 stored message or document can be shown to be the one the chain refers to.

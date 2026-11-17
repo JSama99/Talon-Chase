@@ -33,7 +33,8 @@ from chase.domain.models import (
     OperatorRole,
     Role,
 )
-from chase.ontology.events import EVENT_PAYLOADS
+from chase.ontology.events import EVENT_PAYLOADS, RETIRED_PAYLOADS
+from chase.reader.rules import StandInReader
 from tests.conftest import World, pod
 
 KEY = "test-api-key-0123456789"
@@ -543,7 +544,8 @@ def test_every_load_evidence_kind_is_told_or_deliberately_quiet():
         "config.changed", "operator.saved", "operator.signed_in", "inbound.unrouted",
     }  # fmt: skip
     on_loads = set(EVENT_PAYLOADS) - broker_only
-    assert on_loads == timeline.TOLD | timeline.QUIET
+    # Retired kinds stay told, so a chain written before they were retired still reads.
+    assert on_loads == (timeline.TOLD | timeline.QUIET) - set(RETIRED_PAYLOADS)
     assert not timeline.TOLD & timeline.QUIET
 
 
@@ -651,3 +653,69 @@ def test_saving_settings_keeps_sub_hour_values_it_did_not_change(app_world):
     form |= {"sms_delay_hours": "1.25"}
     client.post("/app/b/brk-1/settings/schedule", data=form)
     assert world.store.get(Broker, "brk-1").config.sms_delay_ms == 75 * MINUTE_MS
+
+
+# ------------------------------------------------------------------ reading
+
+
+class _QueuedReader(StandInReader):
+    """The stand-in, read through the reading desk as a real reader is."""
+
+    inline = False
+
+
+def test_a_load_whose_file_is_still_being_read_says_so():
+    world = World(reader=_QueuedReader())
+    world.store.put(dataclasses.replace(world.owner, email=OWNER_EMAIL))
+    load = world.make_load()
+    world.tick()
+    world.inbound(
+        settle=False,
+        broker_id="brk-1",
+        channel=Channel.EMAIL,
+        from_addr=world.dispatcher.email,
+        subject=f"POD {load.load_number}",
+        body="attached",
+        attachments=[("pod.pdf", pod(load))],
+    )
+    client = TestClient(create_app(world.engine, KEY), base_url="https://testserver")
+    sign_in(world, client)
+    page = client.get(f"/app/b/brk-1/loads/{load.id}").text
+    assert "Carrier replied with a file" in page and "Reading" in page
+    assert "Checked the document" not in page
+    chases = client.get("/app/b/brk-1/chases?state=RECEIVED").text
+    assert load.load_number in chases
+
+
+def test_a_reading_in_doubt_tells_the_broker_what_to_look_at(app_world):
+    world, client, _ = app_world
+    load = world.make_load()
+    world.tick()
+    world.send_pod(
+        load,
+        confidence=60,
+        doubts=["whether the receiver signed", "the delivery date, read as 11/1?"],
+    )
+    sign_in(world, client)
+    page = client.get("/app/b/brk-1").text
+    assert "Could not read the POD reliably" in page
+    assert "Not sure about: whether the receiver signed; the delivery date, read as 11/1?." in page
+    assert "% sure" not in page
+
+
+def test_a_file_the_reader_never_answered_for_is_told_plainly():
+    from chase.ports import ReaderError
+
+    class Down(_QueuedReader):
+        def read(self, filename, content):
+            raise ReaderError("Anthropic 400/invalid_request_error", transient=False)
+
+    world = World(reader=Down())
+    load = world.make_load()
+    world.tick()
+    world.send_pod(load)
+    told = timeline.tell(world.store.evidence(load.id))
+    failed = next(e for e in told if e.title == "Could not read the document")
+    assert failed.tone == "bad" and "kept for you to look at" in failed.detail
+    assert "Anthropic" not in failed.detail  # provider errors stay in the evidence
+    assert told[-1].title == "Stopped and handed to you"

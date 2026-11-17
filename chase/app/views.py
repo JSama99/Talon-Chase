@@ -119,6 +119,10 @@ def escalation_story(
                 facts.append("Signed and dated")
             return f"POD has a note: {notes[0]}", ". ".join(facts) + ". Not filed."
         if reason is EscalationReason.LOW_CONFIDENCE and seen:
+            doubts = seen.get("doubts") or []
+            if doubts:
+                unsure = "; ".join(doubts[:3])
+                return title, f"{carrier}. Not sure about: {unsure}. Not filed."
             sure = seen.get("confidence", 0)
             return title, f"{carrier}. The reader was {sure}% sure. Not filed."
     if reason is EscalationReason.NO_RESPONSE:

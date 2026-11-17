@@ -37,6 +37,9 @@
     "Document": {
       "@id": "urn:talonsight:talon-chase:Document"
     },
+    "Reading": {
+      "@id": "urn:talonsight:talon-chase:Reading"
+    },
     "Check": {
       "@id": "urn:talonsight:talon-chase:Check"
     },
@@ -237,6 +240,10 @@
       "@id": "urn:talonsight:talon-chase:writeback_id",
       "@type": "@id"
     },
+    "reading_inbound_id": {
+      "@id": "urn:talonsight:talon-chase:reading_inbound_id",
+      "@type": "@id"
+    },
     "closed_reason": {
       "@id": "urn:talonsight:talon-chase:closed_reason"
     },
@@ -310,9 +317,42 @@
     "extraction": {
       "@id": "urn:talonsight:talon-chase:extraction"
     },
+    "read_at_ms": {
+      "@id": "urn:talonsight:talon-chase:read_at_ms",
+      "@type": "xsd:integer"
+    },
+    "reader": {
+      "@id": "urn:talonsight:talon-chase:reader"
+    },
     "document_id": {
       "@id": "urn:talonsight:talon-chase:document_id",
       "@type": "@id"
+    },
+    "created_at_ms": {
+      "@id": "urn:talonsight:talon-chase:created_at_ms",
+      "@type": "xsd:integer"
+    },
+    "next_attempt_at_ms": {
+      "@id": "urn:talonsight:talon-chase:next_attempt_at_ms",
+      "@type": "xsd:integer"
+    },
+    "tries": {
+      "@id": "urn:talonsight:talon-chase:tries",
+      "@type": "xsd:integer"
+    },
+    "claim_token": {
+      "@id": "urn:talonsight:talon-chase:claim_token"
+    },
+    "lease_until_ms": {
+      "@id": "urn:talonsight:talon-chase:lease_until_ms",
+      "@type": "xsd:integer"
+    },
+    "last_error": {
+      "@id": "urn:talonsight:talon-chase:last_error"
+    },
+    "finished_at_ms": {
+      "@id": "urn:talonsight:talon-chase:finished_at_ms",
+      "@type": "xsd:integer"
     },
     "result": {
       "@id": "urn:talonsight:talon-chase:result"
@@ -333,10 +373,6 @@
     },
     "detail": {
       "@id": "urn:talonsight:talon-chase:detail"
-    },
-    "created_at_ms": {
-      "@id": "urn:talonsight:talon-chase:created_at_ms",
-      "@type": "xsd:integer"
     },
     "acknowledged_by": {
       "@id": "urn:talonsight:talon-chase:acknowledged_by",
@@ -369,36 +405,14 @@
     "purpose": {
       "@id": "urn:talonsight:talon-chase:purpose"
     },
-    "next_attempt_at_ms": {
-      "@id": "urn:talonsight:talon-chase:next_attempt_at_ms",
-      "@type": "xsd:integer"
-    },
     "quiet_tz": {
       "@id": "urn:talonsight:talon-chase:quiet_tz"
-    },
-    "tries": {
-      "@id": "urn:talonsight:talon-chase:tries",
-      "@type": "xsd:integer"
-    },
-    "claim_token": {
-      "@id": "urn:talonsight:talon-chase:claim_token"
-    },
-    "lease_until_ms": {
-      "@id": "urn:talonsight:talon-chase:lease_until_ms",
-      "@type": "xsd:integer"
-    },
-    "last_error": {
-      "@id": "urn:talonsight:talon-chase:last_error"
     },
     "provider_id": {
       "@id": "urn:talonsight:talon-chase:provider_id"
     },
     "sent_at_ms": {
       "@id": "urn:talonsight:talon-chase:sent_at_ms",
-      "@type": "xsd:integer"
-    },
-    "finished_at_ms": {
-      "@id": "urn:talonsight:talon-chase:finished_at_ms",
       "@type": "xsd:integer"
     },
     "deferred_noted": {
@@ -532,6 +546,9 @@
     "confidence": {
       "@id": "urn:talonsight:talon-chase:confidence",
       "@type": "xsd:integer"
+    },
+    "doubts": {
+      "@id": "urn:talonsight:talon-chase:doubts"
     }
   }
 }

@@ -77,7 +77,29 @@ class ReplyClassifier(Protocol):
     def classify(self, inbound: Inbound) -> Classification: ...
 
 
+class ReaderError(Exception):
+    """The reader could not answer. ``transient`` (an outage, a rate limit, a timeout)
+    is tried again later; anything else is given up on at once. Either way the
+    document ends with a person, never back with the carrier."""
+
+    def __init__(self, message: str, transient: bool = True) -> None:
+        super().__init__(message)
+        self.transient = transient
+
+
 class DocumentReader(Protocol):
+    """Reports what is on a document. It never decides whether the document is good.
+
+    ``name`` goes into the evidence, so it should say which reader, model and prompt
+    answered. ``inline`` is True only for a reader that is a pure function of the
+    bytes (the stand-in): the engine then calls it on the spot. Any reader that
+    talks to a service is called by the reading desk instead, outside the engine's
+    transaction, and may raise ``ReaderError``.
+    """
+
+    name: str
+    inline: bool
+
     def read(self, filename: str, content: bytes) -> Extraction: ...
 
 

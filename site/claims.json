@@ -7,7 +7,8 @@
   ],
   "recorded": [
     {"test": "tests/test_site.py::test_the_recorded_chases_are_what_the_engine_does_today"},
-    {"text": "README.md", "has": "no text line, language model or TMS integration"}
+    {"text": "tools/site.py", "has": "reader=StandInReader()"},
+    {"text": "README.md", "has": "There is still no text line or TMS integration"}
   ],
   "rules-tested": [{"text": "README.md", "has": "Each has a test in `tests/test_acceptance.py`"}],
   "rule-contacts": [{"test": "tests/test_acceptance.py::test_new_reply_address_is_not_adopted"}],
@@ -53,14 +54,16 @@
   "built-screens": [{"test": "tests/test_app.py::test_the_preview_renders_every_screen"}],
   "built-evidence": [{"test": "tests/test_verify_tool.py::test_standalone_verifier_agrees_and_detects_tamper"}],
   "notyet-reader": [
-    {"text": "README.md", "has": "It says nothing about how well a real model reads real PODs"},
-    {"test": "tests/test_engine_more.py::test_a_file_the_stand_in_reader_cannot_read_goes_to_a_person"}
+    {"text": "docs/READER.md", "has": "Not run against the live API, and not measured on real PODs"},
+    {"test": "tests/test_engine_more.py::test_a_file_the_stand_in_reader_cannot_read_goes_to_a_person"},
+    {"test": "tests/test_reader_service.py::test_without_a_key_the_stand_in_reads_and_real_files_go_to_a_person"},
+    {"owner": "With ANTHROPIC_API_KEY set, keep each pilot broker's confidence floor at 100 until the reader has been measured on that broker's PODs. Change this line when it has."}
   ],
   "notyet-tms": [
-    {"text": "README.md", "has": "no text line, language model or TMS integration"},
+    {"text": "README.md", "has": "There is still no text line or TMS integration"},
     {"test": "tests/test_acceptance.py::test_adapter_outage_falls_back_to_packet_email"}
   ],
-  "notyet-texts": [{"text": "README.md", "has": "no text line, language model or TMS integration"}],
+  "notyet-texts": [{"text": "README.md", "has": "There is still no text line or TMS integration"}],
   "notyet-holidays": [{"text": "README.md", "has": "The schedule knows weekends and quiet hours, not holidays"}],
   "pilot-plan": [{"text": "docs/VALIDATION.md", "has": "Two brokers, two weeks"}],
   "pilot-mailbox": [{"text": "docs/VALIDATION.md", "has": "`pods@` mailbox"}],

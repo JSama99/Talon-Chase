@@ -25,6 +25,7 @@ pip install -e ".[dev,postgres]"
 
 ruff check . && ruff format --check .      # style; line length 100, Python 3.12+
 python -m chase.ontology.build --check     # generated ontology files are current
+python tools/site.py runs --check          # the landing page's recorded chases are current
 pytest                                     # all tests
 python -m synthetic.evaluate               # 200 loads; exits non-zero on any failure
 python -m chase.demo                       # five loads end to end, writes out/demo/
@@ -32,8 +33,8 @@ python -m chase.app.preview                # renders every broker screen to out/
 uvicorn chase.api.main:app                 # the service; SQLite chase.db by default
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly the first five commands against
-Postgres 16. A change is done when all five pass.
+CI (`.github/workflows/ci.yml`) runs exactly the first six commands against
+Postgres 16. A change is done when all six pass.
 
 The Postgres tests run only when `CHASE_TEST_POSTGRES_URL` points at an empty UTF-8
 database, for example
@@ -60,6 +61,8 @@ skipped, so run them before changing anything in `chase/store/` or `migrations/`
 | `ontology/` | Generated JSON Schema and JSON-LD context. Never edit by hand |
 | `synthetic/` | Seeded generator and evaluation |
 | `tools/verify_evidence.py` | A standalone evidence verifier with no project imports |
+| `tools/site.py` | Records the landing page's chases from the engine, and builds the site |
+| `site/` | The landing page. `site/claims.json` lists what backs each statement on it |
 | `tests/` | `conftest.py` holds `World`, the test harness |
 
 ## How a chase runs
@@ -149,6 +152,12 @@ receives a `Snapshot` of the store and yields a `Violation` for each breach. Reg
 5. Write `docs/<SERVICE>.md`, including what was **not** verified against the live
    service.
 
+**Anything a broker would see differently** (the schedule, the timeline wording in
+`chase/app/timeline.py`, evidence kinds on a load): run `python tools/site.py runs` and
+commit `site/index.html`. The landing page replays recorded chases, and CI fails when
+they no longer match the engine. A new statement on the page needs a `data-claim` name
+and backing in `site/claims.json`; see [docs/SITE.md](docs/SITE.md).
+
 **A new route.** Admin routes depend on `admin` (the `X-API-Key` header). Engine calls
 go through `run(...)` in `chase/api/app.py`, which takes the lock and opens one store
 transaction. Any `by` field is an operator id, checked with `engine.operator_for`.
@@ -214,6 +223,8 @@ dispatcher, not an engineer. More in [docs/UI.md](docs/UI.md).
 - Call a provider (email, text, TMS) from the engine, or anywhere except the dispatcher
   and the adapters.
 - Weaken a rule above to make a test pass.
+- Put a claim on the landing page that no test or document backs: no logos, quotes,
+  customer counts, percentages or prices.
 
 ## Not built yet
 

@@ -18,7 +18,7 @@ Changing the code, as a person or a coding agent: read [AGENTS.md](AGENTS.md) fi
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                          # 156 pass, 3 skipped without Postgres; 164 with it
+pytest                          # 398 pass, 4 skipped without Postgres; 408 with it
 python -m chase.demo            # five loads, end to end, with evidence exports
 python -m synthetic.evaluate    # 200 loads, 60 document fixtures, pass/fail report
 python tools/verify_evidence.py out/demo/evidence-TC-300002.json
@@ -108,9 +108,11 @@ chase/
 synthetic/     seeded generator (200 loads, 60 fixtures) and evaluation
 migrations/    Alembic: 0001 initial schema, 0002 outbox, 0003 ontology
 ontology/      generated JSON Schema and JSON-LD context
-tools/         verify_evidence.py, a standalone verifier with no project imports
+tools/         verify_evidence.py, a standalone verifier with no project imports;
+               site.py, which records and builds the landing page
+site/          the landing page; see docs/SITE.md
 docs/          ONTOLOGY.md (generated), DEPLOY.md, EMAIL.md, EVIDENCE.md, LOCAL_SETUP.md,
-               OUTBOX.md, UI.md, VALIDATION.md
+               OUTBOX.md, SITE.md, UI.md, VALIDATION.md
 ```
 
 ## Service
@@ -223,13 +225,17 @@ real PODs. That needs labelled documents from a pilot broker.
 - **Document storage.** Files are stored in the database by content hash. Move them to
   object storage before real volume.
 - **Public holidays.** The schedule knows weekends and quiet hours, not holidays.
+- **A real document reader.** The stand-in reads only the synthetic fixtures. A real
+  photo or PDF gets zero confidence and goes to a person; the carrier is not asked
+  for a better copy by something that never looked at it.
 - **A real reply classifier.** The stand-in is keyword rules. Anything it does not
   recognise goes to a person, which is safe but will over-escalate on real mail.
 - **External anchoring of evidence.** See the limits section of docs/EVIDENCE.md.
 
 ## Next steps
 
-1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md).
+1. Validate with brokers: [docs/VALIDATION.md](docs/VALIDATION.md). The landing page
+   that asks for pilots is in `site/`: [docs/SITE.md](docs/SITE.md).
 2. Set up Resend for the first broker: [docs/EMAIL.md](docs/EMAIL.md), then deploy:
    [docs/DEPLOY.md](docs/DEPLOY.md).
 3. One at a time: text messages (Twilio), document reader with labelled PODs, first

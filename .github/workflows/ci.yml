@@ -26,5 +26,6 @@ jobs:
       - run: pip install -e ".[dev,postgres]"
       - run: ruff check . && ruff format --check .
       - run: python -m chase.ontology.build --check
+      - run: python tools/site.py runs --check
       - run: pytest
       - run: python -m synthetic.evaluate

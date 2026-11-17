@@ -195,11 +195,18 @@ def test_carrier_invoice_is_typed_and_never_filed_as_a_pod(world: World):
     assert "not a proof of delivery" in world.email.sent[-1].body
 
 
-def test_unparseable_file_is_treated_as_unreadable(world: World):
+def test_a_file_the_stand_in_reader_cannot_read_goes_to_a_person(world: World):
+    """Until a real reader exists, a real photo or PDF must reach a person. The carrier
+    must not be told their copy is blurry by something that never looked at it."""
     load = world.make_load()
     world.tick()
-    world.reply(load, "here", [("scan.jpg", b"\xff\xd8\xff not json")])
-    assert "too blurry or cropped" in world.email.sent[-1].body
+    for name, content in (("scan.jpg", b"\xff\xd8\xff not json"), ("pod.pdf", b"%PDF-1.7\n")):
+        sent = len(world.email.sent)
+        world.reply(load, "here", [(name, content)])
+        assert len(world.email.sent) == sent
+    assert [e.reason for e in world.escalations(load)] == [EscalationReason.LOW_CONFIDENCE]
+    assert world.chase(load).state is ChaseState.ESCALATED and world.tms.filed == {}
+    assert "too blurry" not in world.all_outbound_text()
 
 
 def test_reask_limit_then_a_person(world: World):

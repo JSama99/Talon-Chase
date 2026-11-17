@@ -1777,7 +1777,7 @@
           "minimum": 0
         },
         "doubts": {
-          "description": "What the reader could not make out, in short phrases for a person.",
+          "description": "What the reader could not make out, in short phrases for a person. Any doubt sends the document to a person, whatever the broker's confidence floor.",
           "type": "array",
           "items": {
             "type": "string"

@@ -12,7 +12,7 @@ and a test fails if they fall behind.
 | --- | --- |
 | Version | `2.0.0` |
 | Id | `urn:talonsight:talon-chase:ontology:2.0.0` |
-| Schema SHA-256 | `c5c7808db79e5ee63065edd1114d1d2e1278ca621fd959a8944b32b7c5e4bb2b` |
+| Schema SHA-256 | `21b31552d44eedd24516ada708f02e0ed5d712745455382a5a73fd20f3bbb905` |
 | Schema | [`ontology/talon-chase.schema.json`](../ontology/talon-chase.schema.json) |
 | JSON-LD context | [`ontology/talon-chase.context.jsonld`](../ontology/talon-chase.context.jsonld) |
 
@@ -488,7 +488,7 @@ What the reader saw on a document.
 | `page_count` | integer | Pages received. |
 | `exception_notes` | list of string | Shortage, damage or refusal noted by the receiver. |
 | `confidence` | integer | How sure the reader is, 0 to 100. |
-| `doubts` | list of string | What the reader could not make out, in short phrases for a person. |
+| `doubts` | list of string | What the reader could not make out, in short phrases for a person. Any doubt sends the document to a person, whatever the broker's confidence floor. |
 
 ## Enumerations
 

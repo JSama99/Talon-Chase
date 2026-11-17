@@ -99,7 +99,8 @@ Each has a test in `tests/test_acceptance.py`.
     never shown the file name, never asked whether a document is good or how sure it
     is. Confidence comes from what it could not make out, and any doubt about the
     signature, the date, a reference number or handwriting sends the document to a
-    person. A file nobody read is never sent back to the carrier.
+    person, whatever the broker's confidence floor. A file nobody read is never sent
+    back to the carrier.
 
 ## Layout
 

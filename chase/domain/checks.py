@@ -30,7 +30,8 @@ class Extraction:
     )
     confidence: int = f("How sure the reader is, 0 to 100.", default=0)
     doubts: list[str] = f(
-        "What the reader could not make out, in short phrases for a person.",
+        "What the reader could not make out, in short phrases for a person. Any doubt "
+        "sends the document to a person, whatever the broker's confidence floor.",
         default_factory=list,
     )
 
@@ -95,8 +96,12 @@ def check_document(
 
     ``other_open_loads`` are loads of the same broker and carrier that still need a
     POD; a document that matches one of them is re-routed there.
+
+    A person looks first whenever the reader said it was unsure of something
+    (``doubts``), whatever the broker's floor: the floor is a setting, and a doubt
+    about a signature, a date, a reference or handwriting is a fact about this page.
     """
-    if extraction.confidence < cfg.confidence_floor:
+    if extraction.doubts or extraction.confidence < cfg.confidence_floor:
         return CheckOutcome(CheckResult.EXCEPTION, ["low_confidence"])
     if not extraction.readable:
         return CheckOutcome(CheckResult.FAIL, ["unreadable"])

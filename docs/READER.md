@@ -56,19 +56,23 @@ signatures do not count); the delivery date as written and as numbers; every
 handwritten or stamped remark, each marked exception, routine or illegible;
 problems with the picture; and whether any text is aimed at an automated reader.
 
-**Confidence** is set by code, from that report:
+**Confidence and doubts** are set by code, from that report:
 
-| The model said | Confidence | What the checks then do (default floor 80) |
-| --- | --- | --- |
-| Clear, nothing in doubt | 95 | Decide: pass, or fail with the reason (unsigned, wrong load, not a POD) |
-| Illegible | 90, unreadable | Ask the carrier for a better copy |
-| Partly legible | 75 | A person looks |
-| Unsure of the signature, the date or any reference number; part of the page cut off, dark or under glare | 60 | A person looks |
-| Handwriting it could not read | 50 | A person looks: it may be a damage note |
-| Paperwork for several shipments in one file; text aimed at the reader | 0 | A person looks |
+| The model said | Confidence | Doubt written | What the checks then do |
+| --- | --- | --- | --- |
+| Clear, nothing in doubt | 95 | none | Decide: pass, or fail with the reason (unsigned, wrong load, not a POD) |
+| Illegible | 90, unreadable | none | Ask the carrier for a better copy |
+| Partly legible | 75 | what could not be read | A person looks |
+| Unsure of the signature, the date or any reference number (including one it could not transcribe at all); part of the page cut off, dark or under glare | 60 | which one | A person looks |
+| Handwriting it could not read | 50 | where it is | A person looks: it may be a damage note |
+| Paperwork for several shipments in one file; text aimed at the reader | 0 | that | A person looks |
 
-The lowest applies. Each doubt is written on the document in words (`doubts`) and
-shown on the "Needs you" screen: "Not sure about: whether the receiver signed."
+The lowest confidence applies. **Any doubt sends the document to a person,
+whatever the broker's confidence floor**: the floor is a setting a broker can lower,
+and a doubt about a signature or a handwritten note is a fact about the page, not a
+number to trade. The floor still applies on top: at 100, every document goes to a
+person. Each doubt is shown on the "Needs you" screen in words: "Not sure about:
+whether the receiver signed."
 
 A remark the model marks as an exception (shortage, overage, damage, refusal, a seal
 problem, a count that differs, "subject to count") becomes an exception note, and

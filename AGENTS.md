@@ -131,7 +131,8 @@ Each is enforced by tests; breaking one fails CI.
     the document is good or for a confidence number. Confidence is set in
     `chase/reader/claude.py` (`CONFIDENCE`) from what the model could not make out, and
     any doubt about the signature, the date, a reference number or handwriting sends
-    the document to a person. A file nobody read is never sent back to the carrier.
+    the document to a person whatever the broker's floor (`check_document` looks at
+    `doubts` before the floor). A file nobody read is never sent back to the carrier.
 
 ## Making common changes
 

@@ -6,6 +6,8 @@ behaviour. They were written to fail before the fix.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from chase.channels.fakes import FakeEmail
@@ -14,6 +16,7 @@ from chase.domain.models import (
     MINUTE_MS,
     Channel,
     ChaseState,
+    CheckResult,
     Consent,
     ConsentSource,
     EscalationReason,
@@ -23,7 +26,7 @@ from chase.domain.models import (
 )
 from chase.domain.tokens import make_upload_token
 from chase.outbox import OutboxDispatcher
-from tests.conftest import World, at, pod
+from tests.conftest import START, World, at, pod
 
 DAY = 24 * HOUR_MS
 
@@ -288,3 +291,89 @@ def test_consent_order_is_the_order_recorded_not_the_id_order():
     assert world.engine.sms_allowed(world.driver.id) is False
     latest = world.engine.latest_consent(world.driver.id)
     assert latest.source is ConsentSource.STOP_REPLY
+
+
+# ------------------------------------------- Codex on #13: the document reader
+
+
+def _model_report(**overrides) -> dict:
+    report = {
+        "document_type": "POD",
+        "legibility": "clear",
+        "reference_numbers": [{"label": "Load", "value": "TC-100001", "certain": True}],
+        "receiver_signature": "present",
+        "delivery_date": {"as_written": "11/14/2026", "month": 11, "day": 14, "year": 2026,
+                          "certain": True},
+        "handwritten_notes": [],
+        "problems": [],
+        "addressed_to_reader": False,
+    }  # fmt: skip
+    report.update(overrides)
+    return report
+
+
+def test_a_reference_the_reader_could_not_transcribe_at_all_is_still_a_doubt():
+    """Codex: a reference reported as an empty value with certain=false was skipped
+    before its uncertainty was looked at, so the reading stayed clean."""
+    from chase.reader.claude import CONFIDENCE, to_extraction
+
+    blank = {"label": "BOL", "value": "", "certain": False}
+    report = _model_report(
+        reference_numbers=[{"label": "Load", "value": "TC-100001", "certain": True}, blank]
+    )
+    extraction = to_extraction(report, 1, START)
+    assert extraction.reference_numbers == ["TC-100001"]
+    assert extraction.confidence == CONFIDENCE["field_in_doubt"]
+    assert extraction.doubts == ["a reference number that could not be read"]
+
+
+@pytest.mark.parametrize("floor", [0, 50, 79])
+def test_a_doubt_goes_to_a_person_whatever_the_brokers_floor(floor):
+    """Codex: the floor is a broker setting. Set to 50, unreadable handwriting (50)
+    cleared it and a POD that may carry a damage note was filed. A doubt the reader
+    reports now sends the document to a person on its own, not through the number."""
+    from chase.domain.checks import check_document
+    from chase.reader.claude import to_extraction
+
+    world = World()
+    load = world.make_load()
+    report = _model_report(
+        reference_numbers=[{"label": "Load", "value": load.load_number, "certain": True}],
+        delivery_date={"as_written": "", "month": 0, "day": 0, "year": 0, "certain": True},
+        handwritten_notes=[{"text": "near the signature", "kind": "illegible"}],
+    )
+    extraction = dataclasses.replace(  # everything else on it would pass
+        to_extraction(report, 1, START), delivery_date_ms=load.delivery_appt_ms
+    )
+    cfg = dataclasses.replace(world.broker.config, confidence_floor=floor)
+    outcome = check_document(extraction, load, [], cfg)
+    assert (outcome.result, outcome.reasons) == (CheckResult.EXCEPTION, ["low_confidence"])
+
+
+def test_at_floor_zero_a_file_nobody_read_still_never_goes_back_to_the_carrier():
+    """The same bypass from the other side: a floor of 0 let the stand-in's 'cannot
+    read' (confidence 0) through to the unreadable check, which asks the carrier for
+    a better copy of a file nothing looked at."""
+    from chase.domain.checks import check_document
+    from chase.reader.rules import StandInReader
+
+    world = World()
+    load = world.make_load()
+    cannot = StandInReader().read("photo.jpg", b"\xff\xd8\xff not json")
+    cfg = dataclasses.replace(world.broker.config, confidence_floor=0)
+    outcome = check_document(cannot, load, [], cfg)
+    assert (outcome.result, outcome.reasons) == (CheckResult.EXCEPTION, ["low_confidence"])
+
+
+def test_a_surely_illegible_page_is_still_sent_back_for_a_better_copy():
+    """The fix must not turn every blurry photo into work for a person: the model being
+    sure a page cannot be read is not a doubt."""
+    from chase.domain.checks import check_document
+    from chase.reader.claude import to_extraction
+
+    world = World()
+    load = world.make_load()
+    extraction = to_extraction(_model_report(legibility="illegible", problems=["blurry"]), 1, START)
+    assert extraction.doubts == []
+    outcome = check_document(extraction, load, [], world.broker.config)
+    assert (outcome.result, outcome.reasons) == (CheckResult.FAIL, ["unreadable"])

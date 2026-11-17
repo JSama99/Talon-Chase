@@ -242,6 +242,20 @@ def facts(**overrides):
     return to_extraction(report(**overrides), 1, START)
 
 
+def test_every_level_below_clean_writes_a_doubt_so_no_floor_can_let_it_through():
+    """The floor is a broker setting; the doubt is what sends a reading to a person."""
+    levels = {
+        "partly_legible": {"legibility": "partly_legible"},
+        "field_in_doubt": {"receiver_signature": "unsure"},
+        "note_in_doubt": {"handwritten_notes": [{"text": "", "kind": "illegible"}]},
+        "not_to_be_trusted": {"addressed_to_reader": True},
+    }
+    assert set(levels) == set(CONFIDENCE) - {"clean", "sure_it_is_unusable"}
+    for level, change in levels.items():
+        extraction = facts(**change)
+        assert extraction.confidence == CONFIDENCE[level] and extraction.doubts, level
+
+
 def test_only_a_clean_reading_or_a_surely_unusable_file_clears_the_default_floor():
     above = {name for name, level in CONFIDENCE.items() if level >= FLOOR}
     assert above == {"clean", "sure_it_is_unusable"}
@@ -348,7 +362,8 @@ def test_an_illegible_file_is_unreadable_with_enough_confidence_to_ask_for_a_bet
     extraction = facts(legibility="illegible", problems=["blurry", "too_dark"])
     assert extraction.readable is False
     assert extraction.confidence == CONFIDENCE["sure_it_is_unusable"] >= FLOOR
-    assert extraction.doubts == ["the picture is blurry", "the picture is too dark"]
+    # Sure it cannot be read is not unsure: no doubts, so the checks ask for a better copy.
+    assert extraction.doubts == []
     assert extraction.reference_numbers == [] and not extraction.signature_present
 
 

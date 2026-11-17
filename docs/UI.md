@@ -101,7 +101,8 @@ resolutions, and a note.
   written consent.
 - Schedule: hours for the first text, third request and hand-off; quiet hours; morning
   hour. Show them as hours; the API takes milliseconds.
-- Strictness: reading confidence floor (0 to 100), maximum re-asks.
+- Strictness: reading confidence floor (0 to 100), maximum re-asks. Lowering the floor
+  never lets a reading the reader was unsure of through; those always come to a person.
 - Where PODs are filed (read-only for now): the adapter name.
 
 ## Also: all chases

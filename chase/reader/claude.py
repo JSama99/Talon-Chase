@@ -198,8 +198,10 @@ SCHEMA: dict[str, Any] = {
     },
 }
 
-# How sure the reading is, by what the model could not make out. The broker's floor
-# is 80 by default: at or above it the fixed checks decide; below it a person does.
+# How sure the reading is, by what the model could not make out. Every level below
+# "clean" also writes a doubt, and any doubt sends the document to a person whatever
+# the broker's floor (chase/domain/checks.py). The number is for the floor and for
+# the screens; it is not what keeps a doubted reading from being filed.
 CONFIDENCE = {
     "clean": 95,  # clear, and nothing in doubt
     "sure_it_is_unusable": 90,  # illegible, or plainly not paperwork: ask for a better copy
@@ -471,15 +473,15 @@ def to_extraction(report: dict[str, Any], page_count: int, now_ms: int) -> Extra
 
     legibility = _word(report["legibility"])
     if legibility == "illegible":
-        # Sure that it cannot be used: the checks ask the carrier for a better copy.
-        # Unless something above says not to trust the file at all.
-        reasons = [_PROBLEM_WORDS[p] for p in problems if p in _PROBLEM_WORDS]
+        # Sure that it cannot be used, which is not a doubt: the checks ask the carrier
+        # for a better copy. Unless something above says not to trust the file at all,
+        # in which case ``doubts`` is not empty and a person looks.
         return Extraction(
             doc_type=doc_type,
             readable=False,
             page_count=page_count,
             confidence=min(ceiling, CONFIDENCE["sure_it_is_unusable"]),
-            doubts=doubts + [r for r in reasons if r not in doubts],
+            doubts=doubts,
         )
     if legibility != "clear":
         named = [_PROBLEM_WORDS[p] for p in problems if p in _PROBLEM_WORDS]
@@ -491,12 +493,13 @@ def to_extraction(report: dict[str, Any], page_count: int, now_ms: int) -> Extra
     references: list[str] = []
     for item in report["reference_numbers"][:MAX_REFERENCES]:
         value = _clean(item["value"], 60)
-        if not value:
-            continue
-        if value not in references:
-            references.append(value)
+        # Uncertainty first: a reference the model could not transcribe at all comes
+        # back empty, and must still count against the reading.
         if not item["certain"]:
-            doubt(f"a reference number, read as {value}", "field_in_doubt")
+            read_as = f", read as {value}" if value else " that could not be read"
+            doubt(f"a reference number{read_as}", "field_in_doubt")
+        if value and value not in references:
+            references.append(value)
 
     signature = _word(report["receiver_signature"])
     if signature not in ("present", "absent"):

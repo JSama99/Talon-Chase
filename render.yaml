@@ -1,26 +1,16 @@
-# Render Blueprint: the Talon Chase service and its Postgres database.
+# Render Blueprint: the Talon Chase service. The database is Supabase Postgres.
 # Steps, costs and the Resend webhook: docs/DEPLOY.md
-databases:
-  - name: talon-chase-db
-    plan: basic-256mb
-    region: virginia
-    postgresMajorVersion: "16" # the version the migration is tested against
-    databaseName: chase
-    user: chase
-    ipAllowList: [] # no outside connections; only Render services can reach it
-
 services:
   - type: web
     name: talon-chase
     runtime: docker # the repo's Dockerfile: migrates, then serves on $PORT
     plan: starter # always on; a free instance sleeps, which would stop the tick
-    region: virginia # same region as the database
+    region: virginia # near Supabase's us-east-1; pick the same area for both
     healthCheckPath: /healthz
     envVars:
+      # Supabase's Session pooler address (port 5432), asked for on apply.
       - key: DATABASE_URL
-        fromDatabase:
-          name: talon-chase-db
-          property: connectionString
+        sync: false
       # Made by Render on the first deploy; read them in the dashboard.
       - key: CHASE_SECRET
         generateValue: true

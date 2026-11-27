@@ -5,7 +5,7 @@ import os
 from alembic import context
 from sqlalchemy import create_engine
 
-from chase.store.sql import METADATA, normalize_database_url
+from chase.store.sql import METADATA, engine_options, normalize_database_url
 
 target_metadata = METADATA
 
@@ -20,7 +20,7 @@ def run() -> None:
         with context.begin_transaction():
             context.run_migrations()
         return
-    engine = create_engine(url)
+    engine = create_engine(url, **engine_options(url))
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
